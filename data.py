@@ -1,3 +1,4 @@
+from bs4 import BeautifulSoup
 from pymongo import MongoClient
 import json
 import os
@@ -110,4 +111,4 @@ def backup_data(collection_name='newspaper_v2'):
 
 
 if __name__ == '__main__':
-    backup_data()
+    pass
