@@ -1,7 +1,5 @@
 .venv
 .vscode
-unused_dataset
-vietnamnet
 html_test
 error_log
 demo.py

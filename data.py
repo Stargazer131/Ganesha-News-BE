@@ -118,6 +118,21 @@ def delete_all_data():
     print(collection.delete_many(filter).deleted_count)
 
 
+def count_category_document():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+    category_map = {}
+    for doc in collection.find():
+        category = doc['category']
+        if category not in category_map:
+            category_map[category] = 0
+        category_map[category] += 1
+    
+    for key, value in category_map.items():
+        print(f'Category {key} has {value} documents')
+
+
 
 if __name__ == '__main__':
-    pass
+    count_category_document()
