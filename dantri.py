@@ -6,7 +6,6 @@ import requests
 from datetime import datetime
 
 
-
 class DantriCrawler:
     root_url = 'https://dantri.com.vn'
     web_name = 'dantri'
@@ -108,8 +107,8 @@ class DantriCrawler:
         List of (link, thumbnail_link), Set of black links (link can't be crawled)
         """
         print(f'Crawl links for category: {category}')
-        article_links = set()
-        article_black_list = set()
+        article_links = DantriCrawler.get_all_links()
+        article_black_list = DantriCrawler.get_all_black_links()
 
         link_and_thumbnails = []
         black_list = set()
@@ -203,7 +202,7 @@ class DantriCrawler:
                     if element.name == 'p' and 'text-align:right' not in element.get('style', []):
                         content_list.append(element.get_text().strip())
 
-                    elif element.name == 'figure' and 'image' in element['class']:
+                    elif element.name == 'figure' and 'image' in element.get('class', []):
                         # extract image link and caption
                         img_tag = element.find('img')
 
@@ -230,16 +229,16 @@ class DantriCrawler:
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
                 description = description_tag.get_text().removeprefix(' - ')
 
-                # loop through all content, only keep p (text) and figure(img)
+                # loop through all content, only keep text and image
                 for element in div_content:
                     if not isinstance(element, Tag):
                         continue
 
                     # only keep text content (remove author text)
-                    if element.name == 'p' and 'text-align:right' not in element.get('style', []):
+                    if element.name in ['p', 'h1', 'h2', 'h3', 'h4'] and 'text-align:right' not in element.get('style', []):
                         content_list.append(element.get_text().strip())
 
-                    elif element.name == 'figure' and 'image' in element['class']:
+                    elif element.name == 'figure' and 'image' in element.get('class', []):
                         # extract image link and caption
                         img_tag = element.find('img')
 
@@ -257,9 +256,22 @@ class DantriCrawler:
                         img_content = f'IMAGECONTENT:{image_link};;{caption}'
                         content_list.append(img_content)
 
+                    # photo grid
+                    elif element.name == 'div' and 'photo-grid' in element.get('class', []):
+                        image_list = []
+                        for row_index, row in enumerate(element.find_all('div', class_="photo-row")):
+                            for col_index, img_tag in enumerate(row.find_all('img')):
+                                image_link = None
+                                if img_tag.get('src', '').startswith('http'):
+                                    image_link = img_tag['src']
+                                elif img_tag.get('data-src', '').startswith('http'):
+                                    image_link = img_tag['data-src']
 
+                                img_content = f'IMAGECONTENT:{image_link};;{row_index + 1},{col_index + 1}'
+                                image_list.append(img_content)
 
-
+                        if len(image_list) > 0:
+                            content_list.append(image_list)
 
 
             if len(content_list) > 0:
@@ -311,7 +323,7 @@ class DantriCrawler:
             else:
                 fail_attempt += 1
                 fail_list.append(article)
-                # black_list.add(link)
+                black_list.add(link)
 
         print(
             f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
@@ -359,11 +371,13 @@ class DantriCrawler:
 
     @staticmethod
     def test_number_of_links():
-        print(len(DantriCrawler.get_all_black_links()))
-        print(len(DantriCrawler.get_all_black_links(unique=False)))
+        print('Black list')
+        print(f'All: {len(DantriCrawler.get_all_black_links())}')
+        print(f'Unique: {len(DantriCrawler.get_all_black_links(unique=False))}\n')
 
-        print(len(DantriCrawler.get_all_links()))
-        print(len(DantriCrawler.get_all_links(unique=False)))
+        print('All link')
+        print(f'All: {len(DantriCrawler.get_all_links())}')
+        print(f'Unique: {len(DantriCrawler.get_all_links(unique=False))}\n')
 
     @staticmethod
     def test_crawl_content(link=''):
@@ -383,4 +397,3 @@ class DantriCrawler:
 
 if __name__ == '__main__':
     DantriCrawler.test_number_of_links()
-

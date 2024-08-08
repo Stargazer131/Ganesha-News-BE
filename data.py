@@ -110,5 +110,14 @@ def backup_data(collection_name='newspaper_v2'):
     client.close()
 
 
+def delete_all_data():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+    filter = {"link": {"$regex": "dantri"}}
+    print(collection.delete_many(filter).deleted_count)
+
+
+
 if __name__ == '__main__':
     pass
