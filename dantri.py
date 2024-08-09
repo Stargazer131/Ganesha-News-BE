@@ -1,4 +1,3 @@
-import re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from pymongo import MongoClient
@@ -18,16 +17,19 @@ class DantriCrawler:
     @staticmethod
     def get_category_name(category: str):
         """
-        Map real category name to database category name
+        Map real category name to database category name.
 
-        Parameters:
+        Parameters
         ----------
-        category: Real category name
+        category : str
+            Real category name.
 
-        Returns:
+        Returns
         ----------
-        Database category name
+        str
+            Database category name.
         """
+
         if category in ['xa-hoi', 'phap-luat']:
             return 'thoi-su'
         elif category in ['o-to-xe-may']:
@@ -40,16 +42,19 @@ class DantriCrawler:
     @staticmethod
     def get_all_links(category=None, unique=True):
         """
-        Get all article links from database
+        Get all article links from the database.
 
-        Parameters:
+        Parameters
         ----------
-        category (optional)
+        category : str, optional
+            The category to filter the links.
 
-        Returns:
+        Returns
         ----------
-        Set of links
+        set
+            Set of links.
         """
+        
         links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
@@ -70,16 +75,18 @@ class DantriCrawler:
     @staticmethod
     def get_all_black_links(unique=True):
         """
-        Get all article links from the black list in database
+        Get all article links from the blacklist in the database.
 
-        Parameters:
+        Parameters
         ----------
-        Nothing
+        None
 
-        Returns:
+        Returns
         ----------
-        Set of links
+        set
+            Set of links.
         """
+
         links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
@@ -96,16 +103,21 @@ class DantriCrawler:
     @staticmethod
     def crawl_article_links(category: str):
         """
-        Crawl all article link for a specific category
+        Crawl all article link for a specific category.
 
-        Parameters:
+        Parameters
         ----------
-        category (str)
+        category : str
+            The category from which to crawl article links.
 
-        Returns:
+        Returns
         ----------
-        List of (link, thumbnail_link), Set of black links (link can't be crawled)
+        tuple
+            A tuple containing:
+            - List of (link, thumbnail_link)
+            - Set of black links (links that can't be crawled)
         """
+
         print(f'Crawl links for category: {category}')
         article_links = DantriCrawler.get_all_links()
         article_black_list = DantriCrawler.get_all_black_links()
@@ -164,12 +176,16 @@ class DantriCrawler:
     @staticmethod
     def crawl_article_content(link: str):
         """
-        Crawl article content
+        Crawl article content.
 
-        Returns:
+        Returns
         ----------
-        Article or tuple(Link, Exception)
+        tuple
+            A tuple containing:
+            - Article: The crawled article content.
+            - tuple: (Link, Exception) if an error occurs.
         """
+
         response = requests.get(link)
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -293,15 +309,18 @@ class DantriCrawler:
     @staticmethod
     def crawl_articles(category: str):
         """
-        Crawl all articles for the given category, Log all errors
+        Crawl all articles for the given category and log all errors.
 
-        Parameters:
+        Parameters
         ----------
-        Category
+        category : str
+            The category for which to crawl articles.
 
-        Returns:
+        Returns
         ----------
-        Article list and Black (link) list
+        tuple
+            - list: List of articles.
+            - set: Set of blacklisted links (links that couldn't be crawled).
         """
 
         fail_attempt = 0
@@ -339,16 +358,18 @@ class DantriCrawler:
     @staticmethod
     def crawl_all_data(categories=[]):
         """
-        Crawl all articles for all categories and update to database
+        Crawl all articles for all categories and update the database.
 
-        Parameters:
+        Parameters
         ----------
-        Category list (optional): Default use the categories attribute
+        category_list : list, optional
+            List of categories to crawl. Defaults to using the `categories` attribute.
 
-        Returns:
+        Returns
         ----------
-        Nothing
+        None
         """
+
         if len(categories) == 0:
             categories = DantriCrawler.categories
 
@@ -386,14 +407,6 @@ class DantriCrawler:
         print(*DantriCrawler.crawl_article_content(link)
               ['content'], sep='\n')
 
-    @staticmethod
-    def test_crawl_links():
-        link_list, black_list = DantriCrawler.crawl_article_links(
-            'suc-khoe')
-        print('List')
-        print(*link_list, sep='\n')
-        print('Black list')
-        print(*black_list, sep='\n')
 
 if __name__ == '__main__':
     DantriCrawler.test_number_of_links()

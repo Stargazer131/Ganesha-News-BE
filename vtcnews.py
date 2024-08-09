@@ -5,14 +5,15 @@ import requests
 from datetime import datetime
 
 
-class VnexpressCrawler:
-    root_url = 'https://vnexpress.net'
-    web_name = 'vnexpress'
+class VtcnewsCrawler:
     categories = [
-        'phap-luat', 'thoi-su', 'the-gioi', 'kinh-doanh',
-        'giai-tri', 'the-thao', 'giao-duc', 'suc-khoe',
-        'du-lich', 'oto-xe-may', 'khoa-hoc', 'so-hoa'
+        "thoi-su-28", "the-gioi-30", "kinh-te-29", "giai-tri-33",
+        "the-thao-34", "giao-duc-31", "suc-khoe-35",
+        "oto-xe-may-37", "khoa-hoc-cong-nghe-82"
     ]
+
+    web_name = 'vtcnews'
+    root_url = 'https://vtcnews.vn'
 
     @staticmethod
     def get_category_name(category: str):
@@ -30,12 +31,12 @@ class VnexpressCrawler:
             Database category name.
         """
 
-        if category in ['phap-luat']:
-            return 'thoi-su'
-        elif category in ['oto-xe-may']:
+        category = category[:-3]
+
+        if category in ['oto-xe-may']:
             return 'xe'
-        elif category in ['khoa-hoc', 'so-hoa']:
-            return 'khoa-hoc-cong-nghe'
+        elif category in ['kinht-te']:
+            return 'kinh-doanh'
         else:
             return category
 
@@ -59,11 +60,10 @@ class VnexpressCrawler:
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['newspaper_v2']
-            filter = {"link": {"$regex": VnexpressCrawler.web_name}}
+            filter = {"link": {"$regex": VtcnewsCrawler.web_name}}
 
             if category is not None:
-                filter['category'] = VnexpressCrawler.get_category_name(
-                    category)
+                filter['category'] = VtcnewsCrawler.get_category_name(category)
 
             for document in collection.find(filter):
                 links.append(document['link'])
@@ -92,7 +92,7 @@ class VnexpressCrawler:
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['black_list']
-            filter = {"link": {"$regex": VnexpressCrawler.web_name}}
+            filter = {"link": {"$regex": VtcnewsCrawler.web_name}}
             for document in collection.find(filter):
                 links.append(document['link'])
 
@@ -102,7 +102,7 @@ class VnexpressCrawler:
         return links
 
     @staticmethod
-    def crawl_article_links(category: str):
+    def crawl_article_links(category: str, max_page=30):
         """
         Crawl all article link for a specific category.
 
@@ -120,19 +120,21 @@ class VnexpressCrawler:
         """
 
         print(f'Crawl links for category: {category}')
-        article_links = VnexpressCrawler.get_all_links()
-        article_black_list = VnexpressCrawler.get_all_black_links()
+        article_links = VtcnewsCrawler.get_all_links()
+        article_black_list = VtcnewsCrawler.get_all_black_links()
 
         link_and_thumbnails = []
         black_list = set()
         page_num = 1
 
-        # vnexpress has maximum 20 page
-        max_page = 20
+        # vtc news has maximum 30 page
+        if max_page is not None:
+            max_page = min(max_page, 30)
+
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
-            url = f'{VnexpressCrawler.root_url}/{category}-p{page_num}/'
+            url = f'{VtcnewsCrawler.root_url}/{category}/trang-{page_num}.html'
             page_num += 1
 
             try:
@@ -141,9 +143,10 @@ class VnexpressCrawler:
 
                 # find all the link
                 article_tags = soup.find_all('article')
+
                 for article_tag in article_tags:
                     a_tag = article_tag.find('a')
-                    article_link = a_tag['href']
+                    article_link = f'{VtcnewsCrawler.root_url}{a_tag["href"]}'
                     img_tag = article_tag.find('img')
 
                     # no img tag mean no thumbnail -> skip
@@ -183,53 +186,41 @@ class VnexpressCrawler:
             - tuple: (Link, Exception) if an error occurs.
         """
 
-        response = requests.get(link)
-        soup = BeautifulSoup(response.content, 'html.parser')
-
         try:
+            response = requests.get(link)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
             content_list = []
-            h1_title = soup.find('h1', class_='title-detail')
-            p_description = soup.find('p', class_='description')
-            span_place = p_description.find('span', class_='location-stamp')
-            span_date = soup.find('span', class_='date')
+            article_tag = soup.find('section', class_='nd-detail')
+            span_date = article_tag.find('span', class_='time-update')
+            h1_title = article_tag.find('h1')
+            description_tag = article_tag.find('h2')
 
-            # some article have different tag for date info
-            if span_date is None:
-                span_date = soup.find('div', class_='date-new')
-
-            # remove Place Text
-            description = p_description.get_text()
-            if span_place is not None:
-                description = description.removeprefix(span_place.get_text())
+            # clean description
+            description = description_tag.get_text().strip().removeprefix('(VTC News)')
+            description = description.removeprefix(' - ')
 
             # extract date info
-            span_date_info = span_date.get_text().split(',')
-            date_str = span_date_info[1].strip()
-            time_str = span_date_info[2].strip()[:5]
+            span_date_info = span_date.get_text().split(',')[1].strip()
+            date_str, time_str, _ = span_date_info.split()
             published_date = datetime.strptime(
-                date_str + ' ' + time_str, '%d/%m/%Y %H:%M'
+                date_str.strip() + ' ' + time_str.strip(), '%d/%m/%Y %H:%M:%S'
             )
 
-            # loop through all content, only keep p (text) and figure(img)
-            article_content = soup.find('article', class_='fck_detail')
-            for element in article_content:
+            div_content = article_tag.find('div', class_="edittor-content")
+            for element in div_content:
                 if not isinstance(element, Tag):
                     continue
 
-                # skip video content
-                if element.find('video') is not None:
-                    continue
-
-                # only select p tag with 1 attr -> article text content
-                if element.name == 'p' and len(element.attrs) == 1 and element.get('class', [''])[0] == 'Normal':
+                # text content
+                if element.name == 'p' and 'expEdit' not in element.get('class', []) and len(element.get_text()) > 0:
                     content_list.append(element.get_text())
 
                 # image content
-                elif element.name == 'figure':
+                elif element.name == 'figure' and 'expNoEdit' in element.get('class', []):
                     # extract image link and caption
                     img_tag = element.find('img')
 
-                    # some figure tag empty (the figure tag at the end of article)
                     if img_tag is None:
                         continue
 
@@ -239,32 +230,58 @@ class VnexpressCrawler:
                     elif img_tag.get('data-src', '').startswith('http'):
                         image_link = img_tag['data-src']
 
-                    p_caption = element.find('p', class_='Image')
+                    fig_caption = element.find('figcaption')
                     caption = ''
-                    if p_caption is not None:
-                        caption = p_caption.get_text()
+                    if fig_caption is not None:
+                        caption = fig_caption.get_text()
 
                     img_content = f'IMAGECONTENT:{image_link};;{caption}'
                     content_list.append(img_content)
 
-                # for image article (different article structure)
-                elif element.name == 'div' and 'item_slide_show' in element.get('class', []):
-                    # extract image link
-                    img_tag = element.find('img')
-                    image_link = None
-                    if img_tag.get('src', '').startswith('http'):
-                        image_link = img_tag['src']
-                    elif img_tag.get('data-src', '').startswith('http'):
-                        image_link = img_tag['data-src']
+                # image article
+                elif element.name == 'div' and 'expNoEdit' in element.get('class', []):
+                    for child in element:
+                        if not isinstance(child, Tag):
+                            continue
+                        
+                        # extract image link (caption may be?)
+                        if child.name == 'figure':
+                            img_tag = element.find('img')
 
-                    img_content = f'IMAGECONTENT:{image_link};;'
-                    content_list.append(img_content)
+                            image_link = None
+                            if img_tag.get('src', '').startswith('http'):
+                                image_link = img_tag['src']
+                            elif img_tag.get('data-src', '').startswith('http'):
+                                image_link = img_tag['data-src']
 
-                    # extract text content for image
-                    div_caption = element.find('div', class_='desc_cation')
-                    for p_tag in div_caption.find_all('p', class_='Normal'):
-                        content_list.append(p_tag.get_text())
+                            fig_caption = element.find('figcaption')
+                            caption = ''
+                            if fig_caption is not None:
+                                caption = fig_caption.get_text()
 
+                            img_content = f'IMAGECONTENT:{image_link};;{caption}'
+                            content_list.append(img_content)
+
+                        # extract image list
+                        elif child.name == 'div' and child.find('p') is None:
+                            image_list = []
+                            for index, img_tag in enumerate(child.find_all('img')):
+                                image_link = None
+                                if img_tag.get('src', '').startswith('http'):
+                                    image_link = img_tag['src']
+                                elif img_tag.get('data-src', '').startswith('http'):
+                                    image_link = img_tag['data-src']
+
+                                img_content = f'IMAGECONTENT:{image_link};;1,{index + 1}'
+                                image_list.append(img_content)
+
+                            if len(image_list) > 0:
+                                content_list.append(image_list)
+
+                        # extract caption (find the direct child - p tag)
+                        elif child.name == 'div' and child.find('p') is not None:
+                            content_list.append(child.find('p').get_text())
+                    
             if len(content_list) > 0:
                 return {
                     'link': link,
@@ -284,6 +301,59 @@ class VnexpressCrawler:
     @staticmethod
     def crawl_articles(category: str):
         """
+        Crawl all articles for the given category and log all errors.
+
+        Parameters
+        ----------
+        category : str
+            The category for which to crawl articles.
+
+        Returns
+        ----------
+        tuple
+            - list: List of articles.
+            - set: Set of blacklisted links (links that couldn't be crawled).
+        """
+
+        fail_attempt = 0
+        articles = []
+        article_links, black_list = VtcnewsCrawler.crawl_article_links(
+            category)
+        fail_list = []
+        print(f'Crawl articles for category: {category}')
+
+        for index, (link, thumbnail) in enumerate(article_links):
+            print(
+                f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end=''
+            )
+
+            article = VtcnewsCrawler.crawl_article_content(link)
+            if isinstance(article, dict):
+                article['thumbnail'] = thumbnail
+                article['category'] = VtcnewsCrawler.get_category_name(category)
+                articles.append(article)
+            else:
+                fail_attempt += 1
+                fail_list.append(article)
+
+                # add the link to black list except for Connection issue
+                if not isinstance(article[1], requests.RequestException):
+                    black_list.add(link)
+
+        print(
+            f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
+        )
+
+        # log all the fail attempt
+        with open(f'error_log/{VtcnewsCrawler.web_name}/error-{category}.txt', 'w') as file:
+            file.writelines(
+                [f'Link: {item[0]} ;; Exception: {str(item[1])}\n' for item in fail_list])
+
+        return articles, black_list
+
+    @staticmethod
+    def crawl_all_data(categories=[]):
+        """
         Crawl all articles for all categories and update the database.
 
         Parameters
@@ -296,57 +366,11 @@ class VnexpressCrawler:
         None
         """
 
-        fail_attempt = 0
-        articles = []
-        article_links, black_list = VnexpressCrawler.crawl_article_links(
-            category)
-        fail_list = []
-        print(f'Crawl articles for category: {category}')
-
-        for index, (link, thumbnail) in enumerate(article_links):
-            print(
-                f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end=''
-            )
-
-            article = VnexpressCrawler.crawl_article_content(link)
-            if isinstance(article, dict):
-                article['thumbnail'] = thumbnail
-                article['category'] = VnexpressCrawler.get_category_name(category)
-                articles.append(article)
-            else:
-                fail_attempt += 1
-                fail_list.append(article)
-                black_list.add(link)
-
-        print(
-            f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
-        )
-
-        # log all the fail attempt
-        with open(f'error_log/{VnexpressCrawler.web_name}/error-{category}.txt', 'w') as file:
-            file.writelines(
-                [f'Link: {item[0]} ;; Exception: {str(item[1])}\n' for item in fail_list])
-
-        return articles, black_list
-
-    @staticmethod
-    def crawl_all_data(categories=[]):
-        """
-        Crawl all articles for all categories and update to database
-
-        Parameters:
-        ----------
-        Category list (optional): Default use the categories attribute
-
-        Returns:
-        ----------
-        Nothing
-        """
         if len(categories) == 0:
-            categories = VnexpressCrawler.categories
+            categories = VtcnewsCrawler.categories
 
         for category in categories:
-            articles, black_list = VnexpressCrawler.crawl_articles(category)
+            articles, black_list = VtcnewsCrawler.crawl_articles(category)
 
             # update article and black link to database
             with MongoClient("mongodb://localhost:27017/") as client:
@@ -364,19 +388,20 @@ class VnexpressCrawler:
 
     @staticmethod
     def test_number_of_links():
-        print(len(VnexpressCrawler.get_all_black_links()))
-        print(len(VnexpressCrawler.get_all_black_links(unique=False)))
+        print('Black list')
+        print(f'All: {len(VtcnewsCrawler.get_all_black_links())}')
+        print(
+            f'Unique: {len(VtcnewsCrawler.get_all_black_links(unique=False))}\n')
 
-        print(len(VnexpressCrawler.get_all_links()))
-        print(len(VnexpressCrawler.get_all_links(unique=False)))
+        print('All link')
+        print(f'All: {len(VtcnewsCrawler.get_all_links())}')
+        print(f'Unique: {len(VtcnewsCrawler.get_all_links(unique=False))}\n')
 
     @staticmethod
-    def test_crawl_content(link=''):
-        if link == '':
-            link = 'https://vnexpress.net/nha-khoa-hoc-viet-phan-tich-gene-phat-hien-som-ung-thu-gan-4769644.html'
-        print(*VnexpressCrawler.crawl_article_content(link)
-              ['content'], sep='\n')
+    def test_crawl_content(link):
+        article = VtcnewsCrawler.crawl_article_content(link)
+        print(*article['content'], sep='\n')
 
 
 if __name__ == '__main__':
-    VnexpressCrawler().test_number_of_links()
+    VtcnewsCrawler.crawl_all_data()

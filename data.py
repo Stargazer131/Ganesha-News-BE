@@ -133,6 +133,23 @@ def count_category_document():
         print(f'Category {key} has {value} documents')
 
 
+def delete_duplicated():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+    doc_set = set()
+    delete_id = []
+    for doc in collection.find():
+        link = doc['link']
+        if link in doc_set:
+            delete_id.append(doc['_id'])
+        else:
+            doc_set.add(link)
+    
+    filter = {"_id": {"$in": delete_id}}
+    print(collection.delete_many(filter).deleted_count)
+
 
 if __name__ == '__main__':
-    count_category_document()
+    pass
+
