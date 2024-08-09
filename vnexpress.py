@@ -102,7 +102,7 @@ class VnexpressCrawler:
         return links
 
     @staticmethod
-    def crawl_article_links(category: str):
+    def crawl_article_links(category: str, max_page=20):
         """
         Crawl all article link for a specific category.
 
@@ -110,6 +110,8 @@ class VnexpressCrawler:
         ----------
         category : str
             The category from which to crawl article links.
+        max_page : int
+            Maximum number of pages to crawl from
 
         Returns
         ----------
@@ -128,7 +130,7 @@ class VnexpressCrawler:
         page_num = 1
 
         # vnexpress has maximum 20 page
-        max_page = 20
+        max_page = min(max_page, 20)
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
@@ -183,10 +185,10 @@ class VnexpressCrawler:
             - tuple: (Link, Exception) if an error occurs.
         """
 
-        response = requests.get(link)
-        soup = BeautifulSoup(response.content, 'html.parser')
-
         try:
+            response = requests.get(link)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
             content_list = []
             h1_title = soup.find('h1', class_='title-detail')
             p_description = soup.find('p', class_='description')
@@ -316,7 +318,11 @@ class VnexpressCrawler:
             else:
                 fail_attempt += 1
                 fail_list.append(article)
-                black_list.add(link)
+
+                # add the link to black list except for Connection issue
+                if not isinstance(article[1], requests.RequestException):
+                    black_list.add(link)
+
 
         print(
             f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
@@ -372,10 +378,8 @@ class VnexpressCrawler:
 
     @staticmethod
     def test_crawl_content(link=''):
-        if link == '':
-            link = 'https://vnexpress.net/nha-khoa-hoc-viet-phan-tich-gene-phat-hien-som-ung-thu-gan-4769644.html'
-        print(*VnexpressCrawler.crawl_article_content(link)
-              ['content'], sep='\n')
+        article = VnexpressCrawler.crawl_article_content(link)
+        print(*article['content'], sep='\n')
 
 
 if __name__ == '__main__':

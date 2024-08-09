@@ -150,6 +150,18 @@ def delete_duplicated():
     print(collection.delete_many(filter).deleted_count)
 
 
+def bulk_update():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+
+    filter_query = {"category": "kinh-te"}
+    update_query = {"$set": {"category": "kinh-doanh"}}
+
+    result = collection.update_many(filter_query, update_query)
+    print(f"Updated {result.modified_count} documents.")
+
+
 if __name__ == '__main__':
-    pass
+    count_category_document()
 

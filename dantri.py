@@ -38,7 +38,7 @@ class DantriCrawler:
             return 'khoa-hoc-cong-nghe'
         else:
             return category
-        
+
     @staticmethod
     def get_all_links(category=None, unique=True):
         """
@@ -54,7 +54,7 @@ class DantriCrawler:
         set
             Set of links.
         """
-        
+
         links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
@@ -99,9 +99,9 @@ class DantriCrawler:
             links = set(links)
 
         return links
-    
+
     @staticmethod
-    def crawl_article_links(category: str):
+    def crawl_article_links(category: str, max_page=30):
         """
         Crawl all article link for a specific category.
 
@@ -109,6 +109,8 @@ class DantriCrawler:
         ----------
         category : str
             The category from which to crawl article links.
+        max_page : int
+            Maximum number of pages to crawl from
 
         Returns
         ----------
@@ -127,7 +129,7 @@ class DantriCrawler:
         page_num = 1
 
         # dantri has maximum 30 page
-        max_page = 30
+        max_page = min(max_page, 30)
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
@@ -172,7 +174,7 @@ class DantriCrawler:
 
         print(f"\nFind {len(link_and_thumbnails)} links")
         return link_and_thumbnails, black_list
-    
+
     @staticmethod
     def crawl_article_content(link: str):
         """
@@ -186,10 +188,10 @@ class DantriCrawler:
             - tuple: (Link, Exception) if an error occurs.
         """
 
-        response = requests.get(link)
-        soup = BeautifulSoup(response.content, 'html.parser')
-
         try:
+            response = requests.get(link)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
             content_list = []
             article_tag = soup.find('article')
             h1_title = article_tag.find('h1')
@@ -203,7 +205,8 @@ class DantriCrawler:
             # normal
             if 'singular-container' in article_tag.get('class', []):
                 description_tag = article_tag.find(class_="singular-sapo")
-                div_content = article_tag.find('div', class_='singular-content')
+                div_content = article_tag.find(
+                    'div', class_='singular-content')
 
                 # clean the description
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
@@ -239,7 +242,8 @@ class DantriCrawler:
             # dnews and photo-story
             elif 'e-magazine' in article_tag.get('class', []):
                 description_tag = article_tag.find(class_="e-magazine__sapo")
-                div_content = article_tag.find('div', class_='e-magazine__body')
+                div_content = article_tag.find(
+                    'div', class_='e-magazine__body')
 
                 # clean the description
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
@@ -288,7 +292,6 @@ class DantriCrawler:
 
                         if len(image_list) > 0:
                             content_list.append(image_list)
-
 
             if len(content_list) > 0:
                 return {
@@ -342,7 +345,10 @@ class DantriCrawler:
             else:
                 fail_attempt += 1
                 fail_list.append(article)
-                black_list.add(link)
+
+                # add the link to black list except for Connection issue
+                if not isinstance(article[1], requests.RequestException):
+                    black_list.add(link)
 
         print(
             f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
@@ -383,7 +389,7 @@ class DantriCrawler:
                 if len(articles) > 0:
                     collection = db['newspaper_v2']
                     collection.insert_many(articles)
-                    
+
                 if len(black_list) > 0:
                     black_collection = db['black_list']
                     black_collection.insert_many(
@@ -394,7 +400,8 @@ class DantriCrawler:
     def test_number_of_links():
         print('Black list')
         print(f'All: {len(DantriCrawler.get_all_black_links())}')
-        print(f'Unique: {len(DantriCrawler.get_all_black_links(unique=False))}\n')
+        print(
+            f'Unique: {len(DantriCrawler.get_all_black_links(unique=False))}\n')
 
         print('All link')
         print(f'All: {len(DantriCrawler.get_all_links())}')
@@ -402,10 +409,8 @@ class DantriCrawler:
 
     @staticmethod
     def test_crawl_content(link=''):
-        if link == '':
-            link = 'https://vnexpress.net/nha-khoa-hoc-viet-phan-tich-gene-phat-hien-som-ung-thu-gan-4769644.html'
-        print(*DantriCrawler.crawl_article_content(link)
-              ['content'], sep='\n')
+        article = DantriCrawler.crawl_article_content(link)
+        print(*article['content'], sep='\n')
 
 
 if __name__ == '__main__':

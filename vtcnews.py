@@ -110,6 +110,8 @@ class VtcnewsCrawler:
         ----------
         category : str
             The category from which to crawl article links.
+        max_page : int
+            Maximum number of pages to crawl from
 
         Returns
         ----------
@@ -128,9 +130,7 @@ class VtcnewsCrawler:
         page_num = 1
 
         # vtc news has maximum 30 page
-        if max_page is not None:
-            max_page = min(max_page, 30)
-
+        max_page = min(max_page, 30)
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
@@ -404,4 +404,4 @@ class VtcnewsCrawler:
 
 
 if __name__ == '__main__':
-    VtcnewsCrawler.crawl_all_data()
+    VtcnewsCrawler.test_number_of_links()

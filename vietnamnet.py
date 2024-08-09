@@ -101,7 +101,7 @@ class VietnamnetCrawler:
         return links
 
     @staticmethod
-    def crawl_article_links(category: str):
+    def crawl_article_links(category: str, max_page=25):
         """
         Crawl all article link for a specific category.
 
@@ -109,6 +109,8 @@ class VietnamnetCrawler:
         ----------
         category : str
             The category from which to crawl article links.
+        max_page : int
+            Maximum number of pages to crawl from
 
         Returns
         ----------
@@ -127,7 +129,7 @@ class VietnamnetCrawler:
         page_num = 1
 
         # vietnamnet has unlimited page
-        max_page = 25
+        max_page = min(max_page, 25)
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
@@ -187,10 +189,10 @@ class VietnamnetCrawler:
             - tuple: (Link, Exception) if an error occurs.
         """
 
-        response = requests.get(link)
-        soup = BeautifulSoup(response.content, 'html.parser')
-
         try:
+            response = requests.get(link)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
             content_list = []
             span_date = soup.find('div', class_='bread-crumb-detail__time')
             article_tag = soup.find('div', class_='content-detail')
@@ -301,7 +303,10 @@ class VietnamnetCrawler:
             else:
                 fail_attempt += 1
                 fail_list.append(article)
-                black_list.add(link)
+
+                # add the link to black list except for Connection issue
+                if not isinstance(article[1], requests.RequestException):
+                    black_list.add(link)
 
         print(
             f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
@@ -361,10 +366,8 @@ class VietnamnetCrawler:
 
     @staticmethod
     def test_crawl_content(link=''):
-        if link == '':
-            link = 'https://vnexpress.net/nha-khoa-hoc-viet-phan-tich-gene-phat-hien-som-ung-thu-gan-4769644.html'
-        print(*VietnamnetCrawler.crawl_article_content(link)
-              ['content'], sep='\n')
+        article = VietnamnetCrawler.crawl_article_content(link)
+        print(*article['content'], sep='\n')
 
 
 
