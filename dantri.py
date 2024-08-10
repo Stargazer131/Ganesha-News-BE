@@ -40,14 +40,13 @@ class DantriCrawler:
             return category
 
     @staticmethod
-    def get_all_links(category=None, unique=True):
+    def get_all_links(unique=True):
         """
         Get all article links from the database.
 
         Parameters
         ----------
-        category : str, optional
-            The category to filter the links.
+        None
 
         Returns
         ----------
@@ -55,22 +54,18 @@ class DantriCrawler:
             Set of links.
         """
 
-        links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['newspaper_v2']
-            filter = {"link": {"$regex": DantriCrawler.web_name}}
+            pipeline = [
+                {"$match": {"web": DantriCrawler.web_name}},
+                {"$project": {"link": 1, "_id": 0}}
+            ]
 
-            if category is not None:
-                filter['category'] = DantriCrawler.get_category_name(category)
-
-            for document in collection.find(filter):
-                links.append(document['link'])
-
-        if unique:
-            links = set(links)
-
-        return links
+            if unique:
+                return set(doc['link'] for doc in collection.aggregate(pipeline))
+            else:
+                return [doc['link'] for doc in collection.aggregate(pipeline)]
 
     @staticmethod
     def get_all_black_links(unique=True):
@@ -87,18 +82,18 @@ class DantriCrawler:
             Set of links.
         """
 
-        links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['black_list']
-            filter = {"link": {"$regex": DantriCrawler.web_name}}
-            for document in collection.find(filter):
-                links.append(document['link'])
+            pipeline = [
+                {"$match": {"web": DantriCrawler.web_name}},
+                {"$project": {"link": 1, "_id": 0}}
+            ]
 
-        if unique:
-            links = set(links)
-
-        return links
+            if unique:
+                return set(doc['link'] for doc in collection.aggregate(pipeline))
+            else:
+                return [doc['link'] for doc in collection.aggregate(pipeline)]
 
     @staticmethod
     def crawl_article_links(category: str, max_page=30):
@@ -144,7 +139,7 @@ class DantriCrawler:
                 article_tags = soup.find_all('article', class_='article-item')
                 for article_tag in article_tags:
                     a_tag = article_tag.find('a')
-                    article_link = f'{DantriCrawler.root_url}/{a_tag["href"]}'
+                    article_link = f'{DantriCrawler.root_url}{a_tag["href"]}'
                     img_tag = article_tag.find('img')
 
                     # if the category is wrong -> skip
@@ -210,7 +205,7 @@ class DantriCrawler:
 
                 # clean the description
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
-                description = description_tag.get_text().removeprefix(' - ')
+                description = description.removeprefix(' - ')
 
                 # loop through all content, only keep p (text) and figure(img)
                 for element in div_content:
@@ -247,7 +242,7 @@ class DantriCrawler:
 
                 # clean the description
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
-                description = description_tag.get_text().removeprefix(' - ')
+                description = description.removeprefix(' - ')
 
                 # loop through all content, only keep text and image
                 for element in div_content:
@@ -301,7 +296,8 @@ class DantriCrawler:
                     'thumbnail': '',
                     'title': h1_title.get_text(),
                     'description': description,
-                    'content': content_list
+                    'content': content_list,
+                    'web': DantriCrawler.web_name
                 }
             else:
                 raise Exception('NO CONTENT')
@@ -393,7 +389,7 @@ class DantriCrawler:
                 if len(black_list) > 0:
                     black_collection = db['black_list']
                     black_collection.insert_many(
-                        [{'link': link} for link in black_list]
+                        [{'link': link, 'web': DantriCrawler.web_name} for link in black_list]
                     )
 
     @staticmethod
@@ -414,4 +410,4 @@ class DantriCrawler:
 
 
 if __name__ == '__main__':
-    DantriCrawler.test_number_of_links()
+    print(DantriCrawler.crawl_article_content('https://dantri.com.vn/the-gioi/uav-lao-trung-can-cu-quan-su-my-o-syria-20240810145628973.htm'))

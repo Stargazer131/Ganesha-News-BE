@@ -8,15 +8,25 @@ from sklearn.metrics.pairwise import cosine_similarity
 import copy
 from datetime import timedelta, datetime
 import random
-import pymongo
+from underthesea import word_tokenize
+import pickle
+import joblib
+import numpy as np
+from pymongo import MongoClient, UpdateOne
+
+
+with open('data/stop_words.pkl', 'rb') as f:
+    stop_words = pickle.load(f)
+
+extra_punctuations = '‘' + '’' + '”' + '“' + '…'
+translator = str.maketrans('', '', string.punctuation + extra_punctuations + string.digits)
 
 
 def process_text(s: str):
-    out_s = []
-    for word in s:
-        if word not in string.punctuation:
-            out_s.append(word)
-    return out_s
+    s = s.lower()
+    s = s.translate(translator)
+    tokens = word_tokenize(s)
+    return [token.replace(' ', '_') for token in tokens if token not in stop_words]
 
 
 # TODO: Change it
@@ -42,36 +52,74 @@ def create_preprocessed_database():
         new_collection.insert_many(documents)
 
 
-def remove_duplicate(threshold=0.8):
+def get_titles():
+    """Retrieves a list of titles from a MongoDB collection.
+
+    Args:
+        collection: A PyMongo collection object.
+
+    Returns:
+        A list of titles.
+    """
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
-    collection = db['newspaper']
+    collection = db['newspaper_v2']
+
+    pipeline = [
+        {"$project": {"title": 1, "_id": 0}}
+    ]
+    titles = [doc['title'] for doc in collection.aggregate(pipeline)]
+    return titles
+
+
+def remove_duplicate_title(threshold=0.8):
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
 
     documents = list(collection.find())
-    titles = [process_text(document['title']) for document in documents]
+    # titles = get_titles()
+    # vectorizer = joblib.load('data/tfidf_vectorizer.pkl')
+    tfidf_matrix = joblib.load('data/tfidf_matrix.pkl')
+    cosine_sim_matrix = cosine_similarity(tfidf_matrix, dense_output=False)
 
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(titles)
-    cosine_sim_matrix = cosine_similarity(tfidf_matrix, tfidf_matrix)
+    rows, cols = cosine_sim_matrix.nonzero()
+    values = cosine_sim_matrix.data
+    filter_index = np.where(values >= threshold)[0]
+    result = [(rows[i], cols[i], values[i]) for i in filter_index if rows[i] != cols[i]]
 
     duplicated_document_ids = []
-    for i in range(len(titles)):
-        for j in range(i + 1, len(titles)):
-            if cosine_sim_matrix[i, j] > threshold:
-                date_i = documents[i]['published_date']
-                date_j = documents[j]['published_date']
-                time_diff = abs((date_i - date_j).total_seconds())
+    duplicated_list = []
+    duplicated_list_time = []
+    for i, j, similarity in result:
+        date_i = documents[i]['published_date']
+        date_j = documents[j]['published_date']
+        time_diff = abs((date_i - date_j).total_seconds())
 
-                # if time difference is < 3 hours -> duplicated
-                limit = 3 * 60 * 60
-                if time_diff < limit:
-                    duplicated_document_ids.append(documents[j]['_id'])
+        # if time difference is < 5 hours -> duplicated
+        limit = 5 * 3600
+        if time_diff < limit:
+            duplicated_list_time.append(f"Link: {documents[i]['link']}\nLink: {documents[j]['link']}\n")
+            duplicated_list_time.append(f"Title: {documents[i]['title']}\nTitle: {documents[j]['title']}\n")
+            duplicated_list_time.append(f"Similarity: {similarity}\n\n")
+        else:
+            duplicated_list.append(f"Link: {documents[i]['link']}\nLink: {documents[j]['link']}\n")
+            duplicated_list.append(f"Title: {documents[i]['title']}\nTitle: {documents[j]['title']}\n")
+            duplicated_list.append(f"Similarity: {similarity}\n\n")
 
-    result = collection.delete_many({'_id': {'$in': duplicated_document_ids}})
-    print(f'Deleted {len(duplicated_document_ids)} duplicated document')
+            # duplicated_document_ids.append(documents[j]['_id'])
+    
+    with open('data/duplicated.txt', 'w', encoding='utf-8') as file:
+        file.writelines(duplicated_list)
+
+    with open('data/duplicated_time.txt', 'w', encoding='utf-8') as file:
+        file.writelines(duplicated_list_time) 
+
+    # result = collection.delete_many({'_id': {'$in': duplicated_document_ids}})
+    # print(f'Deleted {len(duplicated_document_ids)} duplicated document')
 
 
-def delete_duplicate_link():
+def remove_duplicate_link():
     client = MongoClient("mongodb://localhost:27017/")
     db = client['Ganesha_News']
     collection = db['black_list']
@@ -155,13 +203,60 @@ def bulk_update():
     db = client['Ganesha_News']
     collection = db['newspaper_v2']
 
-    filter_query = {"category": "kinh-te"}
-    update_query = {"$set": {"category": "kinh-doanh"}}
+    # filter_query = {"link": {"$regex": "vietnamnet"}}
+    # update_query = {"$set": {"web": "vietnamnet"}}
 
-    result = collection.update_many(filter_query, update_query)
-    print(f"Updated {result.modified_count} documents.")
+    # result = collection.update_many(filter_query, update_query)
+    # print(f"Updated {result.modified_count} documents.")
+
+    # Define the update operation
+    bulk_updates = []
+    for doc in collection.find({"web": "dantri"}):
+        updated_description = str(doc['description']).strip().removeprefix('(Dân trí)')
+        updated_description = updated_description.removeprefix(' - ')
+        
+        # Prepare the bulk update operation
+        bulk_updates.append(
+            UpdateOne(
+                {"_id": doc["_id"]},
+                {"$set": {"description": updated_description}}
+            )
+        )
+
+    result = collection.bulk_write(bulk_updates)
+    print(f"Modified {result.modified_count} documents.")
+
+
+def count_duplicated(filename):
+    with open(filename, 'r', encoding='utf-8') as file:
+        data = file.readlines()
+
+    web_list = ['dantri', 'vnexpress', 'vtcnews', 'vietnamnet']
+    web_map = {}
+
+    for web in web_list:
+        web_map[web] = {}
+        for w in web_list:
+            web_map[web][w] = 0
+
+    for i in range(0, len(data) - 4, 5):
+        link1, link2 = data[i], data[i + 1]
+        for web in web_list:
+            if web in link1:
+                link1 = web
+            if web in link2:
+                link2 = web
+
+        if link1 == link2:
+            web_map[link1][link2] += 1
+        else:
+            web_map[link1][link2] += 1
+            web_map[link2][link1] += 1
+    
+    for web in web_list:
+        for w in web_list:
+            print(f'DUPLICATED betwwen {web} and {w}: {web_map[web][w]}')
 
 
 if __name__ == '__main__':
-    count_category_document()
-
+    bulk_update()

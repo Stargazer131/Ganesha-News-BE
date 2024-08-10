@@ -3,3 +3,5 @@
 html_test
 error_log
 demo.py
+data/*
+!data/vietnamese-stopwords.txt

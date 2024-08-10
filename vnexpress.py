@@ -40,14 +40,13 @@ class VnexpressCrawler:
             return category
 
     @staticmethod
-    def get_all_links(category=None, unique=True):
+    def get_all_links(unique=True):
         """
         Get all article links from the database.
 
         Parameters
         ----------
-        category : str, optional
-            The category to filter the links.
+        None
 
         Returns
         ----------
@@ -55,23 +54,18 @@ class VnexpressCrawler:
             Set of links.
         """
 
-        links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['newspaper_v2']
-            filter = {"link": {"$regex": VnexpressCrawler.web_name}}
+            pipeline = [
+                {"$match": {"web": VnexpressCrawler.web_name}},
+                {"$project": {"link": 1, "_id": 0}}
+            ]
 
-            if category is not None:
-                filter['category'] = VnexpressCrawler.get_category_name(
-                    category)
-
-            for document in collection.find(filter):
-                links.append(document['link'])
-
-        if unique:
-            links = set(links)
-
-        return links
+            if unique:
+                return set(doc['link'] for doc in collection.aggregate(pipeline))
+            else:
+                return [doc['link'] for doc in collection.aggregate(pipeline)]
 
     @staticmethod
     def get_all_black_links(unique=True):
@@ -88,18 +82,18 @@ class VnexpressCrawler:
             Set of links.
         """
 
-        links = []
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['black_list']
-            filter = {"link": {"$regex": VnexpressCrawler.web_name}}
-            for document in collection.find(filter):
-                links.append(document['link'])
+            pipeline = [
+                {"$match": {"web": VnexpressCrawler.web_name}},
+                {"$project": {"link": 1, "_id": 0}}
+            ]
 
-        if unique:
-            links = set(links)
-
-        return links
+            if unique:
+                return set(doc['link'] for doc in collection.aggregate(pipeline))
+            else:
+                return [doc['link'] for doc in collection.aggregate(pipeline)]
 
     @staticmethod
     def crawl_article_links(category: str, max_page=20):
@@ -275,7 +269,8 @@ class VnexpressCrawler:
                     'thumbnail': '',
                     'title': h1_title.get_text(),
                     'description': description,
-                    'content': content_list
+                    'content': content_list,
+                    'web': VnexpressCrawler.web_name
                 }
             else:
                 raise Exception('NO CONTENT')
@@ -365,7 +360,7 @@ class VnexpressCrawler:
                 if len(black_list) > 0:
                     black_collection = db['black_list']
                     black_collection.insert_many(
-                        [{'link': link} for link in black_list]
+                        [{'link': link, 'web': VnexpressCrawler.web_name} for link in black_list]
                     )
 
     @staticmethod
