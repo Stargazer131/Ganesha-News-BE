@@ -57,16 +57,12 @@ class VnexpressCrawler:
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['newspaper_v2']
-            pipeline = [
-                {"$match": {"web": VnexpressCrawler.web_name}},
-                {"$project": {"link": 1, "_id": 0}}
-            ]
-
+            cursor = collection.find({"web": VnexpressCrawler.web_name}, {"link": 1, "_id": 0})
             if unique:
-                return set(doc['link'] for doc in collection.aggregate(pipeline))
+                return set(doc['link'] for doc in cursor)
             else:
-                return [doc['link'] for doc in collection.aggregate(pipeline)]
-
+                return [doc['link'] for doc in cursor]
+            
     @staticmethod
     def get_all_black_links(unique=True):
         """
@@ -85,15 +81,11 @@ class VnexpressCrawler:
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
             collection = db['black_list']
-            pipeline = [
-                {"$match": {"web": VnexpressCrawler.web_name}},
-                {"$project": {"link": 1, "_id": 0}}
-            ]
-
+            cursor = collection.find({"web": VnexpressCrawler.web_name}, {"link": 1, "_id": 0})
             if unique:
-                return set(doc['link'] for doc in collection.aggregate(pipeline))
+                return set(doc['link'] for doc in cursor)
             else:
-                return [doc['link'] for doc in collection.aggregate(pipeline)]
+                return [doc['link'] for doc in cursor]
 
     @staticmethod
     def crawl_article_links(category: str, max_page=20):
@@ -267,8 +259,8 @@ class VnexpressCrawler:
                     'category': '',
                     'published_date': published_date,
                     'thumbnail': '',
-                    'title': h1_title.get_text(),
-                    'description': description,
+                    'title': h1_title.get_text().strip(),
+                    'description': description.strip(),
                     'content': content_list,
                     'web': VnexpressCrawler.web_name
                 }
@@ -365,11 +357,13 @@ class VnexpressCrawler:
 
     @staticmethod
     def test_number_of_links():
-        print(len(VnexpressCrawler.get_all_black_links()))
-        print(len(VnexpressCrawler.get_all_black_links(unique=False)))
+        print('Black list')
+        print(f'All: {len(VnexpressCrawler.get_all_black_links())}')
+        print(f'Unique: {len(VnexpressCrawler.get_all_black_links(unique=False))}\n')
 
-        print(len(VnexpressCrawler.get_all_links()))
-        print(len(VnexpressCrawler.get_all_links(unique=False)))
+        print('All link')
+        print(f'All: {len(VnexpressCrawler.get_all_links())}')
+        print(f'Unique: {len(VnexpressCrawler.get_all_links(unique=False))}\n')
 
     @staticmethod
     def test_crawl_content(link=''):
