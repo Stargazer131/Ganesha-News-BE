@@ -1,122 +1,106 @@
-from bs4 import BeautifulSoup
+from time import time
 from pymongo import MongoClient
 import json
 import os
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import copy
 from datetime import timedelta, datetime
 import random
 from underthesea import word_tokenize
 import pickle
-import joblib
 import numpy as np
 from pymongo import MongoClient, UpdateOne
+import unicodedata
+from copy import deepcopy
+from bson.objectid import ObjectId
 
 
-with open('data/stop_words.pkl', 'rb') as f:
-    stop_words = pickle.load(f)
+def create_punctuations_string():
+    punctuations = ''.join(
+        chr(i) for i in range(0x110000)
+        if unicodedata.category(chr(i)).startswith('P') or
+        unicodedata.category(chr(i)).startswith('S') or
+        unicodedata.category(chr(i)).startswith('N')
+    )
+    return punctuations
 
-extra_punctuations = '‘' + '’' + '”' + '“' + '…'
-translator = str.maketrans('', '', string.punctuation + extra_punctuations + string.digits)
+
+with open('data/stop_words.pkl', 'rb') as file:
+    stop_words = pickle.load(file)
+
+with open('data/punctuations.pkl', 'rb') as file:
+    punctuations = pickle.load(file)
+
+translator = str.maketrans('', '', punctuations)
 
 
-def process_text(s: str):
-    s = s.lower()
-    s = s.translate(translator)
+def process_title(s: str):
+    s = s.lower().translate(translator)
     tokens = word_tokenize(s)
-    return [token.replace(' ', '_') for token in tokens if token not in stop_words]
+    return ' '.join([token.replace(' ', '_') for token in tokens if token not in stop_words])
 
 
-# TODO: Change it
-def create_preprocessed_database():
-    client = MongoClient('mongodb://localhost:27017/')
-    client.drop_database(f'preprocessed_newspaper')
-
-    old_db = client['newspaper']
-    new_db = client['preprocessed_newspaper']
-
-    translator = str.maketrans('', '', string.punctuation + '‘'+'’')
-    for collection_name in old_db.list_collection_names():
-        old_collection = old_db[collection_name]
-        documents = []
-
-        for document in old_collection.find():
-            title = document['title'].translate(translator)
-            new_document = copy.deepcopy(document)
-            new_document['title'] = title
-            documents.append(new_document)
-
-        new_collection = new_db[collection_name]
-        new_collection.insert_many(documents)
-
-
-def get_titles():
-    """Retrieves a list of titles from a MongoDB collection.
-
-    Args:
-        collection: A PyMongo collection object.
-
-    Returns:
-        A list of titles.
-    """
+def get_title_and_descriptions():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
     collection = db['newspaper_v2']
 
-    pipeline = [
-        {"$project": {"title": 1, "_id": 0}}
-    ]
-    titles = [doc['title'] for doc in collection.aggregate(pipeline)]
-    return titles
+    title_and_descriptions = []
+    cursor = collection.find({}, {"title": 1, "description": 1, "_id": 0})
+    for doc in cursor:
+        title = doc['title']
+        description = doc['description']
+        if not title.endswith('.'):
+            title += '.'
+        title_and_descriptions.append(title + '\n' + description)
+
+    return title_and_descriptions
 
 
 def remove_duplicate_title(threshold=0.8):
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
     collection = db['newspaper_v2']
+    b_collection = db['black_list']
+    p_collection = db['processed_content']
 
-    documents = list(collection.find())
-    # titles = get_titles()
-    # vectorizer = joblib.load('data/tfidf_vectorizer.pkl')
-    tfidf_matrix = joblib.load('data/tfidf_matrix.pkl')
+    projection = {"published_date": 1, "link": 1, "web": 1, "_id": 0}
+    documents = list(collection.find({}, projection))
+    titles = [doc['title'] for doc in p_collection.find({}, {"title": 1, "_id": 0})]
+    
+    vectorizer = TfidfVectorizer(lowercase=False)
+    tfidf_matrix = vectorizer.fit_transform(titles)
     cosine_sim_matrix = cosine_similarity(tfidf_matrix, dense_output=False)
 
     rows, cols = cosine_sim_matrix.nonzero()
     values = cosine_sim_matrix.data
     filter_index = np.where(values >= threshold)[0]
-    result = [(rows[i], cols[i], values[i]) for i in filter_index if rows[i] != cols[i]]
+    result = [(rows[i], cols[i]) for i in filter_index if rows[i] < cols[i]]
 
-    duplicated_document_ids = []
-    duplicated_list = []
-    duplicated_list_time = []
-    for i, j, similarity in result:
+    duplicated_document_ids = set()
+    black_list = []
+    for i, j in result:
         date_i = documents[i]['published_date']
         date_j = documents[j]['published_date']
         time_diff = abs((date_i - date_j).total_seconds())
 
-        # if time difference is < 5 hours -> duplicated
+        # if time difference < 5 hours -> duplicated
         limit = 5 * 3600
         if time_diff < limit:
-            duplicated_list_time.append(f"Link: {documents[i]['link']}\nLink: {documents[j]['link']}\n")
-            duplicated_list_time.append(f"Title: {documents[i]['title']}\nTitle: {documents[j]['title']}\n")
-            duplicated_list_time.append(f"Similarity: {similarity}\n\n")
-        else:
-            duplicated_list.append(f"Link: {documents[i]['link']}\nLink: {documents[j]['link']}\n")
-            duplicated_list.append(f"Title: {documents[i]['title']}\nTitle: {documents[j]['title']}\n")
-            duplicated_list.append(f"Similarity: {similarity}\n\n")
-
-            # duplicated_document_ids.append(documents[j]['_id'])
+            obj_id = documents[j]['_id']
+            if obj_id not in duplicated_document_ids:
+                duplicated_document_ids.add(obj_id)
+                black_list.append({
+                    'link': documents[j]['link'],
+                    'web': documents[j]['web']
+                })
     
-    with open('data/duplicated.txt', 'w', encoding='utf-8') as file:
-        file.writelines(duplicated_list)
+    result = collection.delete_many({'_id': {'$in': list(duplicated_document_ids)}})
+    print(f'Deleted {result.deleted_count} duplicated document')
 
-    with open('data/duplicated_time.txt', 'w', encoding='utf-8') as file:
-        file.writelines(duplicated_list_time) 
-
-    # result = collection.delete_many({'_id': {'$in': duplicated_document_ids}})
-    # print(f'Deleted {len(duplicated_document_ids)} duplicated document')
+    result = b_collection.insert_many(black_list)
+    print(f'Added {len(result.inserted_ids)} black list document')
 
 
 def remove_duplicate_link():
@@ -148,9 +132,7 @@ def backup_data(collection_name='newspaper_v2'):
     os.makedirs(output_dir, exist_ok=True)
 
     collection = db[collection_name]
-    data = {
-        'articles': list(collection.find())[:20]
-    }
+    data = list(collection.find())
 
     with open(os.path.join(output_dir, f'{collection_name}.json'), 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, default=str, ensure_ascii=False)
@@ -211,17 +193,16 @@ def bulk_update():
 
     # Define the update operation
     bulk_updates = []
-    for doc in collection.find({"web": "dantri"}):
-        updated_description = str(doc['description']).strip().removeprefix('(Dân trí)')
-        updated_description = updated_description.removeprefix(' - ')
-        
+    index = 0
+    for doc in collection.find({}, {"_id": 1}):        
         # Prepare the bulk update operation
         bulk_updates.append(
             UpdateOne(
                 {"_id": doc["_id"]},
-                {"$set": {"description": updated_description}}
+                {"$set": {"index": index}}
             )
         )
+        index += 1
 
     result = collection.bulk_write(bulk_updates)
     print(f"Modified {result.modified_count} documents.")
@@ -239,7 +220,7 @@ def count_duplicated(filename):
         for w in web_list:
             web_map[web][w] = 0
 
-    for i in range(0, len(data) - 4, 5):
+    for i in range(0, len(data) - 5, 6):
         link1, link2 = data[i], data[i + 1]
         for web in web_list:
             if web in link1:
@@ -258,5 +239,98 @@ def count_duplicated(filename):
             print(f'DUPLICATED betwwen {web} and {w}: {web_map[web][w]}')
 
 
+def paginated_result(page=1, page_size=20):
+    pass
+
+
+def caculate_time(function: callable):
+    start_time = time()
+    function()
+    end_time = time()
+    elapsed_time = end_time - start_time
+    print("Execution time:", elapsed_time, "seconds")
+
+def aggerate_vs_find():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+    web = 'vtcnews'
+
+    # pipeline = [
+    #     {"$match": {"web": web}},
+    #     {"$project": {"link": 1, "_id": 0}}
+    # ]
+
+    # set(doc['link'] for doc in collection.aggregate(pipeline))
+
+    set(doc['link'] for doc in collection.find({"web": web}, {"link": 1, "_id": 0}))
+
+def paginate_result(page=10, page_size=20):
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+
+    filter = {"category": 'thoi-su'}
+    projection = {"title": 1, "description": 1, "thumbnail": 1}
+    skip_doc = (page - 1) * page_size
+    cursor = collection.find(filter, projection, limit=page_size, skip=skip_doc)
+    print(list(cursor))
+
+
+def test_remove_duplicated():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+
+    # cursor = collection.find({}, {"id": 1})
+    # db_ids = set([str(doc['_id']) for doc in cursor])
+
+    black_list = []
+    origin_list = []
+    with open('data/Ganesha_News/newspaper_v2.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        for obj in data:
+            temp = deepcopy(obj)
+            temp['_id'] = ObjectId(temp['_id'])
+            temp['published_date'] = datetime.strptime(temp['published_date'], "%Y-%m-%d %H:%M:%S")
+            origin_list.append(temp)
+    
+    collection.insert_many(origin_list)
+
+    # bcollection = db['black_list']
+    # bcollection.delete_many({"link" : {"$in": black_list}})
+
+
+def preprocess_titles():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+    pcollection = db['processed_content']
+
+    projection = {"title": 1, "_id": 0}
+    titles = [doc['title'] for doc in collection.find({}, projection)]
+    processed_titles = [{"title": process_title(title)} for title in titles]
+
+    pcollection.insert_many(processed_titles)
+
+
+def shuffle_database():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['Ganesha_News']
+    collection = db['newspaper_v2']
+
+    origin_list = []
+    with open('data/Ganesha_News/newspaper_v2.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        for obj in data:
+            temp = deepcopy(obj)
+            temp['_id'] = ObjectId(temp['_id'])
+            temp['published_date'] = datetime.strptime(temp['published_date'], "%Y-%m-%d %H:%M:%S")
+            origin_list.append(temp)
+
+    random.shuffle(origin_list)
+    collection.insert_many(origin_list)
+
+
 if __name__ == '__main__':
-    bulk_update()
+    preprocess_titles()
