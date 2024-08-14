@@ -195,7 +195,6 @@ def bulk_update():
     bulk_updates = []
     index = 0
     for doc in collection.find({}, {"_id": 1}):        
-        # Prepare the bulk update operation
         bulk_updates.append(
             UpdateOne(
                 {"_id": doc["_id"]},
@@ -333,4 +332,4 @@ def shuffle_database():
 
 
 if __name__ == '__main__':
-    preprocess_titles()
+    bulk_update()
