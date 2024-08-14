@@ -2,7 +2,6 @@ from time import time
 from pymongo import MongoClient
 import json
 import os
-import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import timedelta, datetime
@@ -67,8 +66,9 @@ def remove_duplicate_title(threshold=0.8):
 
     projection = {"published_date": 1, "link": 1, "web": 1, "_id": 0}
     documents = list(collection.find({}, projection))
-    titles = [doc['title'] for doc in p_collection.find({}, {"title": 1, "_id": 0})]
-    
+    titles = [doc['title']
+              for doc in p_collection.find({}, {"title": 1, "_id": 0})]
+
     vectorizer = TfidfVectorizer(lowercase=False)
     tfidf_matrix = vectorizer.fit_transform(titles)
     cosine_sim_matrix = cosine_similarity(tfidf_matrix, dense_output=False)
@@ -95,8 +95,9 @@ def remove_duplicate_title(threshold=0.8):
                     'link': documents[j]['link'],
                     'web': documents[j]['web']
                 })
-    
-    result = collection.delete_many({'_id': {'$in': list(duplicated_document_ids)}})
+
+    result = collection.delete_many(
+        {'_id': {'$in': list(duplicated_document_ids)}})
     print(f'Deleted {result.deleted_count} duplicated document')
 
     result = b_collection.insert_many(black_list)
@@ -158,7 +159,7 @@ def count_category_document():
         if category not in category_map:
             category_map[category] = 0
         category_map[category] += 1
-    
+
     for key, value in category_map.items():
         print(f'Category {key} has {value} documents')
 
@@ -175,7 +176,7 @@ def delete_duplicated():
             delete_id.append(doc['_id'])
         else:
             doc_set.add(link)
-    
+
     filter = {"_id": {"$in": delete_id}}
     print(collection.delete_many(filter).deleted_count)
 
@@ -194,7 +195,7 @@ def bulk_update():
     # Define the update operation
     bulk_updates = []
     index = 0
-    for doc in collection.find({}, {"_id": 1}):        
+    for doc in collection.find({}, {"_id": 1}):
         bulk_updates.append(
             UpdateOne(
                 {"_id": doc["_id"]},
@@ -232,7 +233,7 @@ def count_duplicated(filename):
         else:
             web_map[link1][link2] += 1
             web_map[link2][link1] += 1
-    
+
     for web in web_list:
         for w in web_list:
             print(f'DUPLICATED betwwen {web} and {w}: {web_map[web][w]}')
@@ -249,6 +250,7 @@ def caculate_time(function: callable):
     elapsed_time = end_time - start_time
     print("Execution time:", elapsed_time, "seconds")
 
+
 def aggerate_vs_find():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
@@ -262,7 +264,9 @@ def aggerate_vs_find():
 
     # set(doc['link'] for doc in collection.aggregate(pipeline))
 
-    set(doc['link'] for doc in collection.find({"web": web}, {"link": 1, "_id": 0}))
+    set(doc['link'] for doc in collection.find(
+        {"web": web}, {"link": 1, "_id": 0}))
+
 
 def paginate_result(page=10, page_size=20):
     client = MongoClient('mongodb://localhost:27017/')
@@ -272,7 +276,8 @@ def paginate_result(page=10, page_size=20):
     filter = {"category": 'thoi-su'}
     projection = {"title": 1, "description": 1, "thumbnail": 1}
     skip_doc = (page - 1) * page_size
-    cursor = collection.find(filter, projection, limit=page_size, skip=skip_doc)
+    cursor = collection.find(
+        filter, projection, limit=page_size, skip=skip_doc)
     print(list(cursor))
 
 
@@ -291,9 +296,10 @@ def test_remove_duplicated():
         for obj in data:
             temp = deepcopy(obj)
             temp['_id'] = ObjectId(temp['_id'])
-            temp['published_date'] = datetime.strptime(temp['published_date'], "%Y-%m-%d %H:%M:%S")
+            temp['published_date'] = datetime.strptime(
+                temp['published_date'], "%Y-%m-%d %H:%M:%S")
             origin_list.append(temp)
-    
+
     collection.insert_many(origin_list)
 
     # bcollection = db['black_list']
@@ -324,7 +330,8 @@ def shuffle_database():
         for obj in data:
             temp = deepcopy(obj)
             temp['_id'] = ObjectId(temp['_id'])
-            temp['published_date'] = datetime.strptime(temp['published_date'], "%Y-%m-%d %H:%M:%S")
+            temp['published_date'] = datetime.strptime(
+                temp['published_date'], "%Y-%m-%d %H:%M:%S")
             origin_list.append(temp)
 
     random.shuffle(origin_list)
@@ -332,4 +339,4 @@ def shuffle_database():
 
 
 if __name__ == '__main__':
-    bulk_update()
+    pass

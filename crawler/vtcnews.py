@@ -233,7 +233,7 @@ class VtcnewsCrawler:
                         
                         # extract image link (caption may be?)
                         if child.name == 'figure':
-                            img_tag = element.find('img')
+                            img_tag = child.find('img')
 
                             image_link = None
                             if img_tag.get('src', '').startswith('http'):
@@ -268,6 +268,10 @@ class VtcnewsCrawler:
                         # extract caption (find the direct child - p tag)
                         elif child.name == 'div' and child.find('p') is not None:
                             content_list.append(child.find('p').get_text())
+
+                        # extract caption (maybe missing)
+                        elif child.name == 'p':
+                            content_list.append(child.get_text().strip())
                     
             if len(content_list) > 0:
                 return {
