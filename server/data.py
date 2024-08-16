@@ -4,7 +4,7 @@ import json
 import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from datetime import timedelta, datetime
+from datetime import datetime
 import random
 from underthesea import word_tokenize
 import pickle
@@ -13,6 +13,7 @@ from pymongo import MongoClient, UpdateOne
 import unicodedata
 from copy import deepcopy
 from bson.objectid import ObjectId
+from ann_search import load_stop_words, load_punctuations
 
 
 def create_punctuations_string():
@@ -24,15 +25,9 @@ def create_punctuations_string():
     )
     return punctuations
 
-
-with open('data/stop_words.pkl', 'rb') as file:
-    stop_words = pickle.load(file)
-
-with open('data/punctuations.pkl', 'rb') as file:
-    punctuations = pickle.load(file)
-
+stop_words = load_stop_words()
+punctuations = load_punctuations()
 translator = str.maketrans('', '', punctuations)
-
 
 def process_title(s: str):
     s = s.lower().translate(translator)
