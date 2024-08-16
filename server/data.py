@@ -35,23 +35,6 @@ def process_title(s: str):
     return ' '.join([token.replace(' ', '_') for token in tokens if token not in stop_words])
 
 
-def get_title_and_descriptions():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper_v2']
-
-    title_and_descriptions = []
-    cursor = collection.find({}, {"title": 1, "description": 1, "_id": 0})
-    for doc in cursor:
-        title = doc['title']
-        description = doc['description']
-        if not title.endswith('.'):
-            title += '.'
-        title_and_descriptions.append(title + '\n' + description)
-
-    return title_and_descriptions
-
-
 def remove_duplicate_title(threshold=0.8):
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
@@ -99,28 +82,6 @@ def remove_duplicate_title(threshold=0.8):
     print(f'Added {len(result.inserted_ids)} black list document')
 
 
-def remove_duplicate_link():
-    client = MongoClient("mongodb://localhost:27017/")
-    db = client['Ganesha_News']
-    collection = db['black_list']
-
-    # Find duplicates based on the 'link' attribute
-    pipeline = [
-        {"$group": {"_id": "$link", "count": {"$sum": 1}, "docs": {"$push": "$_id"}}},
-        {"$match": {"count": {"$gt": 1}}}
-    ]
-
-    duplicates = collection.aggregate(pipeline)
-
-    # Remove duplicates, keeping only one document per link
-    for duplicate in duplicates:
-        # Keep the first document and remove the rest
-        ids_to_keep = duplicate['docs'][1:]
-        collection.delete_many({'_id': {'$in': ids_to_keep}})
-
-    print("Duplicate documents removed and unique index created based on 'link' attribute.")
-
-
 def backup_data(collection_name='newspaper_v2'):
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
@@ -136,14 +97,6 @@ def backup_data(collection_name='newspaper_v2'):
     client.close()
 
 
-def delete_all_data():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper_v2']
-    filter = {"link": {"$regex": "dantri"}}
-    print(collection.delete_many(filter).deleted_count)
-
-
 def count_category_document():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
@@ -157,23 +110,6 @@ def count_category_document():
 
     for key, value in category_map.items():
         print(f'Category {key} has {value} documents')
-
-
-def delete_duplicated():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper_v2']
-    doc_set = set()
-    delete_id = []
-    for doc in collection.find():
-        link = doc['link']
-        if link in doc_set:
-            delete_id.append(doc['_id'])
-        else:
-            doc_set.add(link)
-
-    filter = {"_id": {"$in": delete_id}}
-    print(collection.delete_many(filter).deleted_count)
 
 
 def bulk_update():
@@ -203,77 +139,15 @@ def bulk_update():
     print(f"Modified {result.modified_count} documents.")
 
 
-def count_duplicated(filename):
-    with open(filename, 'r', encoding='utf-8') as file:
-        data = file.readlines()
-
-    web_list = ['dantri', 'vnexpress', 'vtcnews', 'vietnamnet']
-    web_map = {}
-
-    for web in web_list:
-        web_map[web] = {}
-        for w in web_list:
-            web_map[web][w] = 0
-
-    for i in range(0, len(data) - 5, 6):
-        link1, link2 = data[i], data[i + 1]
-        for web in web_list:
-            if web in link1:
-                link1 = web
-            if web in link2:
-                link2 = web
-
-        if link1 == link2:
-            web_map[link1][link2] += 1
-        else:
-            web_map[link1][link2] += 1
-            web_map[link2][link1] += 1
-
-    for web in web_list:
-        for w in web_list:
-            print(f'DUPLICATED betwwen {web} and {w}: {web_map[web][w]}')
-
-
-def paginated_result(page=1, page_size=20):
-    pass
-
-
 def caculate_time(function: callable):
-    start_time = time()
-    function()
-    end_time = time()
-    elapsed_time = end_time - start_time
-    print("Execution time:", elapsed_time, "seconds")
-
-
-def aggerate_vs_find():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper_v2']
-    web = 'vtcnews'
-
-    # pipeline = [
-    #     {"$match": {"web": web}},
-    #     {"$project": {"link": 1, "_id": 0}}
-    # ]
-
-    # set(doc['link'] for doc in collection.aggregate(pipeline))
-
-    set(doc['link'] for doc in collection.find(
-        {"web": web}, {"link": 1, "_id": 0}))
-
-
-def paginate_result(page=10, page_size=20):
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper_v2']
-
-    filter = {"category": 'thoi-su'}
-    projection = {"title": 1, "description": 1, "thumbnail": 1}
-    skip_doc = (page - 1) * page_size
-    cursor = collection.find(
-        filter, projection, limit=page_size, skip=skip_doc)
-    print(list(cursor))
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        function(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("Execution time:", elapsed_time, "seconds")
+    
+    return wrapper
 
 
 def test_remove_duplicated():
@@ -312,25 +186,6 @@ def preprocess_titles():
     processed_titles = [{"title": process_title(title)} for title in titles]
 
     pcollection.insert_many(processed_titles)
-
-
-def shuffle_database():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper_v2']
-
-    origin_list = []
-    with open('data/Ganesha_News/newspaper_v2.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        for obj in data:
-            temp = deepcopy(obj)
-            temp['_id'] = ObjectId(temp['_id'])
-            temp['published_date'] = datetime.strptime(
-                temp['published_date'], "%Y-%m-%d %H:%M:%S")
-            origin_list.append(temp)
-
-    random.shuffle(origin_list)
-    collection.insert_many(origin_list)
 
 
 if __name__ == '__main__':

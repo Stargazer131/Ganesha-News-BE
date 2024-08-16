@@ -1,3 +1,4 @@
+import os
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from pymongo import MongoClient
@@ -11,7 +12,6 @@ class VtcnewsCrawler:
         "the-thao-34", "giao-duc-31", "suc-khoe-35",
         "oto-xe-may-37", "khoa-hoc-cong-nghe-82"
     ]
-
     web_name = 'vtcnews'
     root_url = 'https://vtcnews.vn'
 
@@ -32,10 +32,9 @@ class VtcnewsCrawler:
         """
 
         category = category[:-3]
-
         if category in ['oto-xe-may']:
             return 'xe'
-        elif category in ['kinht-te']:
+        elif category in ['kinh-te']:
             return 'kinh-doanh'
         else:
             return category
@@ -108,7 +107,7 @@ class VtcnewsCrawler:
             - Set of black links (links that can't be crawled)
         """
 
-        print(f'Crawl links for category: {category}')
+        print(f'Crawl links for category: {category}/{VtcnewsCrawler.web_name}')
         article_links = VtcnewsCrawler.get_all_links()
         article_black_list = VtcnewsCrawler.get_all_black_links()
 
@@ -121,6 +120,7 @@ class VtcnewsCrawler:
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
+            found_new_link = False
             url = f'{VtcnewsCrawler.root_url}/{category}/trang-{page_num}.html'
             page_num += 1
 
@@ -151,8 +151,13 @@ class VtcnewsCrawler:
 
                     # check for duplicated and "black" link
                     if article_link not in article_links and article_link not in article_black_list:
+                        found_new_link = True
                         article_links.add(article_link)
                         link_and_thumbnails.append((article_link, image_link))
+
+                if not found_new_link:
+                    print(f"\nNo new link found, terminate the searching!")
+                    break
 
             except Exception as e:
                 pass
@@ -167,10 +172,11 @@ class VtcnewsCrawler:
 
         Returns
         ----------
-        tuple
-            A tuple containing:
-            - Article: The crawled article content.
-            - tuple: (Link, Exception) if an error occurs.
+        Article
+            The crawled article content.
+        Or
+        Tuple[Link, Exception]
+            The link and exception if an error occurs.
         """
 
         try:
@@ -282,7 +288,8 @@ class VtcnewsCrawler:
                     'title': h1_title.get_text().strip(),
                     'description': description,
                     'content': content_list,
-                    'web': VtcnewsCrawler.web_name
+                    'web': VtcnewsCrawler.web_name,
+                    'index': -1
                 }
             else:
                 raise Exception('NO CONTENT')
@@ -309,15 +316,12 @@ class VtcnewsCrawler:
 
         fail_attempt = 0
         articles = []
-        article_links, black_list = VtcnewsCrawler.crawl_article_links(
-            category)
+        article_links, black_list = VtcnewsCrawler.crawl_article_links(category)
         fail_list = []
         print(f'Crawl articles for category: {category}')
 
         for index, (link, thumbnail) in enumerate(article_links):
-            print(
-                f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end=''
-            )
+            print(f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end='')
 
             article = VtcnewsCrawler.crawl_article_content(link)
             if isinstance(article, dict):
@@ -332,14 +336,15 @@ class VtcnewsCrawler:
                 if not isinstance(article[1], requests.RequestException):
                     black_list.add(link)
 
-        print(
-            f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
-        )
+        print(f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n')
 
         # log all the fail attempt
-        with open(f'error_log/{VtcnewsCrawler.web_name}/error-{category}.txt', 'w') as file:
-            file.writelines(
-                [f'Link: {item[0]} ;; Exception: {str(item[1])}\n' for item in fail_list])
+        error_log_dir = f'error_log/{VtcnewsCrawler.web_name}'
+        error_file_path = f'{error_log_dir}/error-{category}.txt'
+        os.makedirs(error_log_dir, exist_ok=True)
+        
+        with open(error_file_path, 'w') as file:
+            file.writelines([f'Link: {item[0]} ;; Exception: {str(item[1])}\n' for item in fail_list])
 
         return articles, black_list
 

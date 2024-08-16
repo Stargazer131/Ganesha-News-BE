@@ -1,3 +1,4 @@
+import os
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from pymongo import MongoClient
@@ -11,7 +12,6 @@ class VietnamnetCrawler:
         "the-thao", "giao-duc", "suc-khoe", "du-lich", 
         "oto-xe-may", "thong-tin-truyen-thong"
     ]
-
     web_name = 'vietnamnet'
     root_url = 'https://vietnamnet.vn'
 
@@ -107,7 +107,7 @@ class VietnamnetCrawler:
             - Set of black links (links that can't be crawled)
         """
         
-        print(f'Crawl links for category: {category}')
+        print(f'Crawl links for category: {category}/{VietnamnetCrawler.web_name}')
         article_links = VietnamnetCrawler.get_all_links()
         article_black_list = VietnamnetCrawler.get_all_black_links()
 
@@ -120,6 +120,7 @@ class VietnamnetCrawler:
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
+            found_new_link = False
             url = f'{VietnamnetCrawler.root_url}/{category}-page{page_num - 1}'
             page_num += 1
 
@@ -154,8 +155,13 @@ class VietnamnetCrawler:
 
                     # check for duplicated and "black" link
                     if article_link not in article_links and article_link not in article_black_list:
+                        found_new_link = True
                         article_links.add(article_link)
                         link_and_thumbnails.append((article_link, image_link))
+
+                if not found_new_link:
+                    print(f"\nNo new link found, terminate the searching!")
+                    break
 
             except Exception as e:
                 pass
@@ -170,10 +176,11 @@ class VietnamnetCrawler:
 
         Returns
         ----------
-        tuple
-            A tuple containing:
-            - Article: The crawled article content.
-            - tuple: (Link, Exception) if an error occurs.
+        Article
+            The crawled article content.
+        Or
+        Tuple[Link, Exception]
+            The link and exception if an error occurs.
         """
 
         try:
@@ -247,7 +254,8 @@ class VietnamnetCrawler:
                     'title': h1_title.get_text().strip(),
                     'description': description_tag.get_text().strip(),
                     'content': content_list,
-                    'web': VietnamnetCrawler.web_name
+                    'web': VietnamnetCrawler.web_name,
+                    'index': -1
                 }
             else:
                 raise Exception('NO CONTENT')
@@ -279,9 +287,7 @@ class VietnamnetCrawler:
         print(f'Crawl articles for category: {category}')
 
         for index, (link, thumbnail) in enumerate(article_links):
-            print(
-                f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end=''
-            )
+            print(f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end='')
 
             article = VietnamnetCrawler.crawl_article_content(link)
             if isinstance(article, dict):
@@ -296,14 +302,15 @@ class VietnamnetCrawler:
                 if not isinstance(article[1], requests.RequestException):
                     black_list.add(link)
 
-        print(
-            f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n'
-        )
+        print(f'\nSuccess: {len(article_links) - fail_attempt}, Fail: {fail_attempt}\n')
 
         # log all the fail attempt
-        with open(f'error_log/{VietnamnetCrawler.web_name}/error-{category}.txt', 'w') as file:
-            file.writelines(
-                [f'Link: {item[0]} ;; Exception: {str(item[1])}\n' for item in fail_list])
+        error_log_dir = f'error_log/{VietnamnetCrawler.web_name}'
+        error_file_path = f'{error_log_dir}/error-{category}.txt'
+        os.makedirs(error_log_dir, exist_ok=True)
+        
+        with open(error_file_path, 'w') as file:
+            file.writelines([f'Link: {item[0]} ;; Exception: {str(item[1])}\n' for item in fail_list])
 
         return articles, black_list
 
