@@ -2,14 +2,13 @@ from typing import Annotated
 from fastapi import FastAPI, Query, HTTPException
 from pymongo import MongoClient
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId
-from server.ann_search import load_nndescent, load_topic_distributions
+from server.data import load_nndescent
 
 
 app = FastAPI()
 client = MongoClient("mongodb://localhost:27017")
 db = client["Ganesha_News"]
 nndescent = load_nndescent()
-topic_distributions = load_topic_distributions()
 
 
 @app.get("/articles/", response_model=list[ShortArticle])
@@ -40,8 +39,8 @@ def get_article_and_recommendations_by_id(
     if article is None:
         raise HTTPException(404, "Article not found")
     
-    res_index, _ = nndescent.query([topic_distributions[article['index']]], k=limit+1)
-    filter_index = [int(num) for num in res_index[0][1:]]
+    res_index = nndescent.neighbor_graph[0][article['index']]
+    filter_index = [int(num) for num in res_index[1 : limit + 1]]
 
     recommendation_list = db['newspaper_v2'].find(
         {"index": {"$in": filter_index}},
