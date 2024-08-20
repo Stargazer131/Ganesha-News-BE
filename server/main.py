@@ -49,23 +49,29 @@ def get_article_and_recommendations_by_id(
 
     article = Article(**article)
     recommendations = [ShortArticle(**item) for item in recommendation_list]
-
     return ArticleRecommendation(article=article, recommendations=recommendations)
 
 
-@app.get("/search", response_model=list[ShortArticle])
-def get_articles_by_keyword(keyword: str):
+@app.get("/search/", response_model=list[ShortArticle])
+def get_articles_by_keyword(
+    keyword: str,
+    limit: Annotated[int, Query(ge=1, le=50)] = 30,
+):
     title_articles = list(db['newspaper_v2'].find(
         {"title": {"$regex": keyword, "$options": "i"}},
         {"title": 1, "description": 1, "thumbnail": 1}
-    ))
+    ).sort({"published_date": -1}).limit(limit))
     
     title_ids = [article["_id"] for article in title_articles]
-    description_articles = list(db['newspaper_v2'].find(
-        {"description": {"$regex": keyword, "$options": "i"}, "_id": {"$nin": title_ids}},
-        {"title": 1, "description": 1, "thumbnail": 1}
-    ))
+    remaining = limit - len(title_ids)
+    if remaining > 0:
+        description_articles = list(db['newspaper_v2'].find(
+            {"description": {"$regex": keyword, "$options": "i"}, "_id": {"$nin": title_ids}},
+            {"title": 1, "description": 1, "thumbnail": 1}
+        ).sort({"published_date": -1}).limit(remaining))
+    else:
+        description_articles = []
 
     articles = title_articles + description_articles
-
     return [ShortArticle(**article) for article in articles]
+
