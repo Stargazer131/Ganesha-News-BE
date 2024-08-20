@@ -29,7 +29,7 @@ def get_articles_by_category(
     return [ShortArticle(**article) for article in articles]
 
 
-@app.get("/article/{article_id}", response_model=ArticleRecommendation)
+@app.get("/articles/{article_id}", response_model=ArticleRecommendation)
 def get_article_and_recommendations_by_id(
     article_id: PyObjectId, 
     limit: Annotated[int, Query(ge=5, le=20)] = 10,
@@ -52,3 +52,20 @@ def get_article_and_recommendations_by_id(
 
     return ArticleRecommendation(article=article, recommendations=recommendations)
 
+
+@app.get("/search", response_model=list[ShortArticle])
+def get_articles_by_keyword(keyword: str):
+    title_articles = list(db['newspaper_v2'].find(
+        {"title": {"$regex": keyword, "$options": "i"}},
+        {"title": 1, "description": 1, "thumbnail": 1}
+    ))
+    
+    title_ids = [article["_id"] for article in title_articles]
+    description_articles = list(db['newspaper_v2'].find(
+        {"description": {"$regex": keyword, "$options": "i"}, "_id": {"$nin": title_ids}},
+        {"title": 1, "description": 1, "thumbnail": 1}
+    ))
+
+    articles = title_articles + description_articles
+
+    return [ShortArticle(**article) for article in articles]

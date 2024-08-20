@@ -47,6 +47,8 @@ def crawl_all_new_articles():
         temp_articles, temp_black_list = VtcnewsCrawler.crawl_articles(category)
         temporary_update(temp_articles, temp_black_list, VtcnewsCrawler.web_name)
 
+    print(f'\nCrawl {data.total_documents('temporary_newspaper_v2')} new articles!\n')
+    
     return True
 
 
@@ -138,6 +140,7 @@ def check_duplicated_titles(threshold=0.8):
             print(f'Added {len(result.inserted_ids)} black list document')
             
     # update processed list
+    print('Update processed titles list')
     new_titles = [title for i, title in enumerate(new_titles) if i not in remove_indices]
     data.save_processed_titles(old_titles + new_titles)
     
@@ -145,6 +148,7 @@ def check_duplicated_titles(threshold=0.8):
     
 
 def update_nndescent_index():
+    print('Load models')
     nndescent = data.load_nndescent()
     if nndescent.neighbor_graph[0].shape[0] == len(data.load_processed_titles()):
         print('Index graph has been updated!')
@@ -189,30 +193,24 @@ def update_database():
             index += 1
 
         result = collection.insert_many(articles)
-        print(f'Add {len(result.inserted_ids)} articles')
+        print(f'Copy {len(result.inserted_ids)} articles to original database')
         temp_collection.drop()
         
         return True
     
 
 def update_new_articles():
-    print('Crawl all new articles')
-    result = crawl_all_new_articles()
-    if not result:
-        return
+    print('\nCrawl all new articles')
+    crawl_all_new_articles()
     
-    print('Check for duplicated titles')
-    result = check_duplicated_titles()
-    if not result:
-        return
+    print('\nCheck for duplicated titles')
+    check_duplicated_titles()
 
-    print('Update the nndescent index')
-    result = update_nndescent_index()
-    if not result:
-        return
+    print('\nUpdate the nndescent index')
+    update_nndescent_index()
     
-    print('Update database')
-    result = update_database()
+    print('\nUpdate database')
+    update_database()
 
     
 if __name__ == '__main__':

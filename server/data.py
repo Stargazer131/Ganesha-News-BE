@@ -2,12 +2,9 @@ from time import time
 from pymongo import MongoClient
 import json
 import os
-from datetime import datetime
 from underthesea import sent_tokenize, word_tokenize
 from pymongo import MongoClient, UpdateOne
 import unicodedata
-from copy import deepcopy
-from bson.objectid import ObjectId
 import pickle
 from pynndescent import NNDescent
 
