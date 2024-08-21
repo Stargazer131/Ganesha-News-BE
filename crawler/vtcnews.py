@@ -1,4 +1,5 @@
 import os
+import re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from pymongo import MongoClient
@@ -42,16 +43,14 @@ class VtcnewsCrawler:
     @staticmethod
     def get_all_links(unique=True):
         """
-        Get all article links from the database.
+        Get all article ids from database (extracted from link).
 
-        Parameters
-        ----------
-        None
+        Use extracted id instead of link to prevent some redirected links (same article but different link).
 
         Returns
         ----------
         set
-            Set of links.
+            Set of id.
         """
 
         with MongoClient("mongodb://localhost:27017/") as client:
@@ -59,23 +58,21 @@ class VtcnewsCrawler:
             collection = db['newspaper_v2']
             cursor = collection.find({"web": VtcnewsCrawler.web_name}, {"link": 1, "_id": 0})
             if unique:
-                return set(doc['link'] for doc in cursor)
+                return set(VtcnewsCrawler.extract_id(doc['link']) for doc in cursor)
             else:
-                return [doc['link'] for doc in cursor]
+                return [VtcnewsCrawler.extract_id(doc['link'])  for doc in cursor]
 
     @staticmethod
     def get_all_black_links(unique=True):
         """
-        Get all article links from the blacklist in the database.
+        Get all article ids from the black list in database (extracted from link).
 
-        Parameters
-        ----------
-        None
+        Use extracted id instead of link to prevent some redirected links (same article but different link).
 
         Returns
         ----------
         set
-            Set of links.
+            Set of id.
         """
 
         with MongoClient("mongodb://localhost:27017/") as client:
@@ -83,9 +80,25 @@ class VtcnewsCrawler:
             collection = db['black_list']
             cursor = collection.find({"web": VtcnewsCrawler.web_name}, {"link": 1, "_id": 0})
             if unique:
-                return set(doc['link'] for doc in cursor)
+                return set(VtcnewsCrawler.extract_id(doc['link']) for doc in cursor)
             else:
-                return [doc['link'] for doc in cursor]
+                return [VtcnewsCrawler.extract_id(doc['link'])  for doc in cursor]
+    
+    @staticmethod
+    def extract_id(link: str):
+        """
+        Extract the article id from the url.
+
+        """
+
+        link = link.removesuffix('.htm')
+        link = link.removesuffix('.html')
+        article_id = link.split('-')[-1]
+        if not article_id.startswith('ar'):
+            matches = re.findall(r"\d+", link)
+            return matches[-1]
+        else:
+            return article_id
 
     @staticmethod
     def crawl_article_links(category: str, max_page=30):
@@ -108,8 +121,8 @@ class VtcnewsCrawler:
         """
 
         print(f'Crawl links for category: {category}/{VtcnewsCrawler.web_name}')
-        article_links = VtcnewsCrawler.get_all_links()
-        article_black_list = VtcnewsCrawler.get_all_black_links()
+        article_link_ids = VtcnewsCrawler.get_all_links()
+        article_black_list_ids = VtcnewsCrawler.get_all_black_links()
 
         link_and_thumbnails = []
         black_list = set()
@@ -135,10 +148,11 @@ class VtcnewsCrawler:
                     a_tag = article_tag.find('a')
                     article_link = f'{VtcnewsCrawler.root_url}{a_tag["href"]}'
                     img_tag = article_tag.find('img')
+                    article_id = VtcnewsCrawler.extract_id(article_link)
 
                     # no img tag mean no thumbnail -> skip
                     if img_tag is None:
-                        if article_link not in article_black_list:
+                        if article_id not in article_black_list_ids:
                             black_list.add(article_link)
                         continue
 
@@ -150,9 +164,9 @@ class VtcnewsCrawler:
                         image_link = img_tag['data-src']
 
                     # check for duplicated and "black" link
-                    if article_link not in article_links and article_link not in article_black_list:
+                    if article_id not in article_link_ids and article_link not in article_black_list_ids:
                         found_new_link = True
-                        article_links.add(article_link)
+                        article_link_ids.add(article_id)
                         link_and_thumbnails.append((article_link, image_link))
 
                 if not found_new_link:
@@ -387,8 +401,7 @@ class VtcnewsCrawler:
     def test_number_of_links():
         print('Black list')
         print(f'All: {len(VtcnewsCrawler.get_all_black_links())}')
-        print(
-            f'Unique: {len(VtcnewsCrawler.get_all_black_links(unique=False))}\n')
+        print(f'Unique: {len(VtcnewsCrawler.get_all_black_links(unique=False))}\n')
 
         print('All link')
         print(f'All: {len(VtcnewsCrawler.get_all_links())}')
@@ -402,3 +415,4 @@ class VtcnewsCrawler:
 
 if __name__ == '__main__':
     VtcnewsCrawler.test_number_of_links()
+
