@@ -151,7 +151,7 @@ def count_category_document():
         print(f'Category {key} has {value} documents')
 
 
-def bulk_update():
+def bulk_update_reset_index():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
     collection = db['newspaper_v2']
@@ -180,22 +180,22 @@ def get_category_list(collection_name: str):
         return list(collection.find({}, projection))
     
 
-def test_accuracy():
+def test_accuracy(top_n=10):
     nndescent = load_nndescent()
-    top_recomendations = nndescent.neighbor_graph[0]
+    top_recommendations = nndescent.neighbor_graph[0]
     data = get_category_list('newspaper_v2')
 
     correct_recommendation = 0
-    for recomendations in top_recomendations:
-        main_category = data[int(recomendations[0])]['category']
+    for recommendations in top_recommendations:
+        main_category = data[int(recommendations[0])]['category']
         
-        for index in recomendations[1:11]:
+        for index in recommendations[1 : top_n + 1]:
             category = data[int(index)]['category']
             if category == main_category:
                 correct_recommendation += 1
             
-    print(f'Total correct recommendation: {correct_recommendation} / {len(top_recomendations) * 10}')    
-    print(f'Accuracy: {correct_recommendation / (len(top_recomendations) * 10.0) * 100 : .2f} %')
+    print(f'Total correct recommendation: {correct_recommendation} / {len(top_recommendations) * top_n}')    
+    print(f'Accuracy: {correct_recommendation / (len(top_recommendations) * float(top_n)) * 100 : .2f} %')
 
 
 def caculate_time(function: callable):
@@ -208,4 +208,5 @@ def caculate_time(function: callable):
 
 if __name__ == '__main__':
     test_accuracy()
-
+        
+        

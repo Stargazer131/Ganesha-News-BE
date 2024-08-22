@@ -276,7 +276,8 @@ class VnexpressCrawler:
                     for p_tag in div_caption.find_all('p', class_='Normal'):
                         content_list.append(p_tag.get_text())
 
-            if len(content_list) > 0:
+            # content list <= 3 -> crawling process is broken, q/a article ...
+            if len(content_list) > 3:
                 return {
                     'link': link,
                     'category': '',
@@ -381,12 +382,12 @@ class VnexpressCrawler:
     @staticmethod
     def test_number_of_links():
         print('Black list')
-        print(f'All: {len(VnexpressCrawler.get_all_black_links())}')
-        print(f'Unique: {len(VnexpressCrawler.get_all_black_links(unique=False))}\n')
+        print(f'All: {len(VnexpressCrawler.get_all_black_links(False))}')
+        print(f'Unique: {len(VnexpressCrawler.get_all_black_links())}\n')
 
         print('All link')
-        print(f'All: {len(VnexpressCrawler.get_all_links())}')
-        print(f'Unique: {len(VnexpressCrawler.get_all_links(unique=False))}\n')
+        print(f'All: {len(VnexpressCrawler.get_all_links(False))}')
+        print(f'Unique: {len(VnexpressCrawler.get_all_links())}\n')
 
     @staticmethod
     def test_crawl_content(link=''):

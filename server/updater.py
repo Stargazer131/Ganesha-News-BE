@@ -47,7 +47,7 @@ def crawl_all_new_articles():
         temp_articles, temp_black_list = VtcnewsCrawler.crawl_articles(category)
         temporary_update(temp_articles, temp_black_list, VtcnewsCrawler.web_name)
 
-    print(f'\nCrawl {data.total_documents('temporary_newspaper_v2')} new articles!\n')
+    print(f"\nCrawl {data.total_documents('temporary_newspaper_v2')} new articles!\n")
     
     return True
 
@@ -66,7 +66,7 @@ def check_duplicated_titles(threshold=0.8):
     
     new_titles = [data.process_title(doc['title']) for doc in new_articles]
     
-    # create 2 seperate matrix 
+    # create 2 separate matrix 
     vectorizer = TfidfVectorizer(lowercase=False)
     tfidf_matrix = vectorizer.fit_transform(old_titles + new_titles)
     old_tfidf_matrix = tfidf_matrix[ : len(old_titles)]
