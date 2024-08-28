@@ -1,9 +1,11 @@
+import random
 from time import time
 from pymongo import MongoClient
 import json
 import os
 from underthesea import sent_tokenize, word_tokenize
 from pymongo import MongoClient, UpdateOne
+from pymongo import ASCENDING, DESCENDING
 import unicodedata
 import pickle
 from pynndescent import NNDescent
@@ -41,6 +43,12 @@ def load_stop_words():
     with open('data/vietnamese-stopwords.txt', 'r', encoding='utf-8') as file:
         data = file.readlines()
         return set([word.strip() for word in data])
+    
+
+def load_fixed_words():
+    with open('data/fixed-words.txt', 'r', encoding='utf-8') as file:
+        data = file.readlines()
+        return set([word.strip() for word in data])
 
 
 def create_punctuations_string():
@@ -50,23 +58,30 @@ def create_punctuations_string():
         unicodedata.category(chr(i)).startswith('S') or
         unicodedata.category(chr(i)).startswith('N')
     )
+
+    remove_digits = str.maketrans('', '', '0123456789')
+    punctuations = punctuations.translate(remove_digits)
     return punctuations
 
 
 stop_words = load_stop_words()
+fixed_words = load_fixed_words()
 translator = str.maketrans('', '', create_punctuations_string())
 
 
-def process_title(s: str):
-    s = s.lower().translate(translator)
-    tokens = word_tokenize(s)
-    return ' '.join([token.replace(' ', '_') for token in tokens if token not in stop_words])
-
-
-def process_sentence(s: str):
-    s = s.lower().translate(translator)
-    tokens = word_tokenize(s)
-    return [token.replace(' ', '_') for token in tokens if token not in stop_words]
+def process_sentence(sent: str):
+    sent = sent.translate(translator)
+    tokens = word_tokenize(sent, fixed_words=fixed_words)
+    result = []
+    for token in tokens:
+        if token in fixed_words:
+            result.append(token.replace(' ', '_'))
+        else:
+            token = token.lower()
+            if not token.isnumeric() and token not in stop_words:
+                result.append(token.replace(' ', '_'))
+                
+    return result
 
 
 def process_paragraph(text: str):
@@ -83,6 +98,10 @@ def process_content(content: list):
         if isinstance(element, str) and not element.startswith('IMAGECONTENT'):
             res.extend(process_paragraph(element))
     return res
+
+
+def process_title(title: str):
+    return ' '.join(process_sentence(title))
 
 
 def get_titles(collection_name: str):
@@ -121,7 +140,7 @@ def is_collection_empty_or_not_exist(collection_name: str):
         return False
 
 
-def backup_data(collection_name='newspaper_v2'):
+def backup_data(collection_name='newspaper'):
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
     output_dir = f'data/Ganesha_News'
@@ -139,7 +158,7 @@ def backup_data(collection_name='newspaper_v2'):
 def count_category_document():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
-    collection = db['newspaper_v2']
+    collection = db['newspaper']
     category_map = {}
     for doc in collection.find():
         category = doc['category']
@@ -151,10 +170,10 @@ def count_category_document():
         print(f'Category {key} has {value} documents')
 
 
-def bulk_update_reset_index():
+def bulk_update():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
-    collection = db['newspaper_v2']
+    collection = db['newspaper']
 
     # Define the update operation
     bulk_updates = []
@@ -172,6 +191,50 @@ def bulk_update_reset_index():
     print(f"Modified {result.modified_count} documents.")
 
 
+def shuffle_database():
+    collection_name = 'newspaper'
+    with MongoClient("mongodb://localhost:27017/") as client:
+        db = client['Ganesha_News']
+        collection = db[collection_name]
+        data = list(collection.find())
+        random.shuffle(data)
+        collection.drop()
+
+    with MongoClient("mongodb://localhost:27017/") as client:
+        db = client['Ganesha_News']
+        collection = db[collection_name]
+        for index, doc in enumerate(data):
+            doc['index'] = index
+        
+        result = collection.insert_many(data)
+        print(f'Shuffle {len(result.inserted_ids)} documents')
+
+        collection.create_index([("category", ASCENDING), ("published_date", DESCENDING)])
+        collection.create_index([("published_date", DESCENDING)])
+        collection.create_index([("index", ASCENDING)])
+
+
+def delete_duplicated_links(collection_name='black_list'):
+    with MongoClient("mongodb://localhost:27017/") as client:
+        db = client['Ganesha_News']
+        collection = db[collection_name]
+
+        # Step 1: Identify duplicates based on the 'link' field
+        pipeline = [
+            {"$group": {"_id": "$link", "ids": {"$addToSet": "$_id"}, "count": {"$sum": 1}}},
+            {"$match": {"count": {"$gt": 1}}}
+        ]
+
+        duplicates = collection.aggregate(pipeline)
+
+        # Step 2: Delete duplicates, keeping one document per 'link'
+        for doc in duplicates:
+            ids_to_delete = doc['ids'][1:]  # Keep the first ID, delete the rest
+            collection.delete_many({"_id": {"$in": ids_to_delete}})
+
+        print("Duplicate documents have been deleted.")
+
+
 def get_category_list(collection_name: str):
     with MongoClient('mongodb://localhost:27017/') as client:
         db = client['Ganesha_News']
@@ -183,7 +246,7 @@ def get_category_list(collection_name: str):
 def test_accuracy(top_n=10):
     nndescent = load_nndescent()
     top_recommendations = nndescent.neighbor_graph[0]
-    data = get_category_list('newspaper_v2')
+    data = get_category_list('newspaper')
 
     correct_recommendation = 0
     for recommendations in top_recommendations:
@@ -198,15 +261,7 @@ def test_accuracy(top_n=10):
     print(f'Accuracy: {correct_recommendation / (len(top_recommendations) * float(top_n)) * 100 : .2f} %')
 
 
-def caculate_time(function: callable):
-    start_time = time()
-    function()
-    end_time = time()
-    elapsed_time = end_time - start_time
-    print("Execution time:", elapsed_time, "seconds")
-
-
 if __name__ == '__main__':
-    test_accuracy()
+    test_accuracy(20)
         
         

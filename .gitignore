@@ -5,4 +5,5 @@ error_log
 demo.py
 data/*
 !data/vietnamese-stopwords.txt
+!data/fixed-words.txt
 __pycache__
