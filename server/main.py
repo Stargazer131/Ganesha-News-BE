@@ -21,7 +21,7 @@ def get_articles_by_category(
     if category != Category.latest:
         filter = {"category": category}
 
-    articles = db['newspaper_v2'].find(
+    articles = db['newspaper'].find(
         filter,
         {"title": 1, "description": 1, "thumbnail": 1}
     ).sort({"published_date": -1}).skip((page - 1) * limit).limit(limit)
@@ -34,7 +34,7 @@ def get_article_and_recommendations_by_id(
     article_id: PyObjectId, 
     limit: Annotated[int, Query(ge=5, le=20)] = 10,
 ):    
-    article = db['newspaper_v2'].find_one({"_id": article_id})
+    article = db['newspaper'].find_one({"_id": article_id})
 
     if article is None:
         raise HTTPException(404, "Article not found")
@@ -42,7 +42,7 @@ def get_article_and_recommendations_by_id(
     res_index = nndescent.neighbor_graph[0][article['index']]
     filter_index = [int(num) for num in res_index[1 : limit + 1]]
 
-    recommendation_list = db['newspaper_v2'].find(
+    recommendation_list = db['newspaper'].find(
         {"index": {"$in": filter_index}},
         {"title": 1, "description": 1, "thumbnail": 1}
     )
@@ -57,7 +57,7 @@ def get_articles_by_keyword(
     keyword: str,
     limit: Annotated[int, Query(ge=1, le=50)] = 30,
 ):
-    title_articles = list(db['newspaper_v2'].find(
+    title_articles = list(db['newspaper'].find(
         {"title": {"$regex": keyword, "$options": "i"}},
         {"title": 1, "description": 1, "thumbnail": 1}
     ).sort({"published_date": -1}).limit(limit))
@@ -65,7 +65,7 @@ def get_articles_by_keyword(
     title_ids = [article["_id"] for article in title_articles]
     remaining = limit - len(title_ids)
     if remaining > 0:
-        description_articles = list(db['newspaper_v2'].find(
+        description_articles = list(db['newspaper'].find(
             {"description": {"$regex": keyword, "$options": "i"}, "_id": {"$nin": title_ids}},
             {"title": 1, "description": 1, "thumbnail": 1}
         ).sort({"published_date": -1}).limit(remaining))
