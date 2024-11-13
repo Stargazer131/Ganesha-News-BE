@@ -56,7 +56,7 @@ class DantriCrawler:
 
         with MongoClient("mongodb://localhost:27017/") as client:
             db = client['Ganesha_News']
-            collection = db['newspaper_v2']
+            collection = db['newspaper']
             cursor = collection.find({"web": DantriCrawler.web_name}, {"link": 1, "_id": 0})
             if unique:
                 return set(DantriCrawler.extract_id(doc['link']) for doc in cursor)
@@ -403,7 +403,7 @@ class DantriCrawler:
                 db = client['Ganesha_News']
 
                 if len(articles) > 0:
-                    collection = db['newspaper_v2']
+                    collection = db['newspaper']
                     collection.insert_many(articles)
 
                 if len(black_list) > 0:
