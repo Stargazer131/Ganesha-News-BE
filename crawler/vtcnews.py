@@ -5,6 +5,7 @@ from bs4.element import Tag
 from pymongo import MongoClient
 import requests
 from datetime import datetime
+from time import sleep
 
 
 class VtcnewsCrawler:
@@ -133,6 +134,7 @@ class VtcnewsCrawler:
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
+            sleep(0.1)
             found_new_link = False
             url = f'{VtcnewsCrawler.root_url}/{category}/trang-{page_num}.html'
             page_num += 1
@@ -210,9 +212,7 @@ class VtcnewsCrawler:
             # extract date info
             span_date_info = span_date.get_text().split(',')[1].strip()
             date_str, time_str, _ = span_date_info.split()
-            published_date = datetime.strptime(
-                date_str.strip() + ' ' + time_str.strip(), '%d/%m/%Y %H:%M:%S'
-            )
+            published_date = datetime.strptime(date_str.strip() + ' ' + time_str.strip(), '%d/%m/%Y %H:%M:%S')
 
             div_content = article_tag.find('div', class_="edittor-content")
             for element in div_content:
@@ -338,6 +338,7 @@ class VtcnewsCrawler:
         for index, (link, thumbnail) in enumerate(article_links):
             print(f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end='')
 
+            sleep(0.2)
             article = VtcnewsCrawler.crawl_article_content(link)
             if isinstance(article, dict):
                 article['thumbnail'] = thumbnail
@@ -363,40 +364,6 @@ class VtcnewsCrawler:
 
         return articles, black_list
 
-    @staticmethod
-    def crawl_all_data(categories=[]):
-        """
-        Crawl all articles for all categories and update the database.
-
-        Parameters
-        ----------
-        category_list : list, optional
-            List of categories to crawl. Defaults to using the `categories` attribute.
-
-        Returns
-        ----------
-        None
-        """
-
-        if len(categories) == 0:
-            categories = VtcnewsCrawler.categories
-
-        for category in categories:
-            articles, black_list = VtcnewsCrawler.crawl_articles(category)
-
-            # update article and black link to database
-            with MongoClient("mongodb://localhost:27017/") as client:
-                db = client['Ganesha_News']
-
-                if len(articles) > 0:
-                    collection = db['newspaper']
-                    collection.insert_many(articles)
-
-                if len(black_list) > 0:
-                    black_collection = db['black_list']
-                    black_collection.insert_many(
-                        [{'link': link, 'web': VtcnewsCrawler.web_name} for link in black_list]
-                    )
 
     @staticmethod
     def test_number_of_links():
@@ -407,6 +374,7 @@ class VtcnewsCrawler:
         print('All link')
         print(f'All: {len(VtcnewsCrawler.get_all_links(False))}')
         print(f'Unique: {len(VtcnewsCrawler.get_all_links())}\n')
+
 
     @staticmethod
     def test_crawl_content(link):

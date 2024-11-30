@@ -5,6 +5,7 @@ from bs4.element import Tag
 from pymongo import MongoClient
 import requests
 from datetime import datetime
+from time import sleep
 
 
 class DantriCrawler:
@@ -134,6 +135,7 @@ class DantriCrawler:
         while page_num <= max_page:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
+            sleep(0.1)
             found_new_link = False
             url = f'{DantriCrawler.root_url}/{category}/trang-{page_num}.htm'
             page_num += 1
@@ -209,18 +211,14 @@ class DantriCrawler:
             if len(h1_title.get_text().strip()) == 0:
                 raise Exception("NO TITLE")
 
-            time = article_tag.find('time')
-
             # extract date info
-            published_date = datetime.strptime(
-                time['datetime'], '%Y-%m-%d %H:%M'
-            )
+            time = article_tag.find('time')
+            published_date = datetime.strptime(time['datetime'], '%Y-%m-%d %H:%M')
 
             # normal
             if 'singular-container' in article_tag.get('class', []):
                 description_tag = article_tag.find(class_="singular-sapo")
-                div_content = article_tag.find(
-                    'div', class_='singular-content')
+                div_content = article_tag.find('div', class_='singular-content')
 
                 # clean the description
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
@@ -256,8 +254,7 @@ class DantriCrawler:
             # dnews and photo-story
             elif 'e-magazine' in article_tag.get('class', []):
                 description_tag = article_tag.find(class_="e-magazine__sapo")
-                div_content = article_tag.find(
-                    'div', class_='e-magazine__body')
+                div_content = article_tag.find('div', class_='e-magazine__body')
 
                 # clean the description
                 description = description_tag.get_text().strip().removeprefix('(Dân trí)')
@@ -351,7 +348,8 @@ class DantriCrawler:
 
         for index, (link, thumbnail) in enumerate(article_links):
             print(f"\rCrawling article [{index + 1} / {len(article_links)}], failed: {fail_attempt}", end='')
-
+            
+            sleep(0.25)
             article = DantriCrawler.crawl_article_content(link)
             if isinstance(article, dict):
                 article['thumbnail'] = thumbnail
@@ -377,40 +375,6 @@ class DantriCrawler:
 
         return articles, black_list
 
-    @staticmethod
-    def crawl_all_data(categories=[]):
-        """
-        Crawl all articles for all categories and update the database.
-
-        Parameters
-        ----------
-        category_list : list, optional
-            List of categories to crawl. Defaults to using the `categories` attribute.
-
-        Returns
-        ----------
-        None
-        """
-
-        if len(categories) == 0:
-            categories = DantriCrawler.categories
-
-        for category in categories:
-            articles, black_list = DantriCrawler.crawl_articles(category)
-
-            # update article and black link to database
-            with MongoClient("mongodb://localhost:27017/") as client:
-                db = client['Ganesha_News']
-
-                if len(articles) > 0:
-                    collection = db['newspaper']
-                    collection.insert_many(articles)
-
-                if len(black_list) > 0:
-                    black_collection = db['black_list']
-                    black_collection.insert_many(
-                        [{'link': link, 'web': DantriCrawler.web_name} for link in black_list]
-                    )
 
     @staticmethod
     def test_number_of_links():
@@ -421,6 +385,7 @@ class DantriCrawler:
         print('All link')
         print(f'All: {len(DantriCrawler.get_all_links(False))}')
         print(f'Unique: {len(DantriCrawler.get_all_links())}\n')
+
 
     @staticmethod
     def test_crawl_content(link=''):
