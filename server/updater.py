@@ -13,7 +13,7 @@ from gensim.corpora import Dictionary
 from gensim.matutils import sparse2full
 
 
-def crawl_all_new_articles():
+def crawl_new_articles():
     if not data.is_collection_empty_or_not_exist('temporary_newspaper'):
         print('New articles have been crawled!')
         return False
@@ -65,7 +65,7 @@ def crawl_all_new_articles():
     return True
 
 
-def check_duplicated_titles(threshold=0.8):
+def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
     # load database (old) and newly crawled article
     old_articles = data.get_titles('newspaper')
     new_articles = data.get_titles('temporary_newspaper')
@@ -93,7 +93,7 @@ def check_duplicated_titles(threshold=0.8):
     cosine_sim_matrix = cosine_similarity(new_tfidf_matrix, old_tfidf_matrix, dense_output=False)
     rows, cols = cosine_sim_matrix.nonzero()
     values = cosine_sim_matrix.data
-    filter_index = np.where(values >= threshold)[0]
+    filter_index = np.where(values >= similarity_threshold)[0]
     result = [(rows[i], cols[i]) for i in filter_index]
     
     for i, j in result:
@@ -101,8 +101,8 @@ def check_duplicated_titles(threshold=0.8):
         date_j = old_articles[j]['published_date']
         time_diff = abs((date_i - date_j).total_seconds())
 
-        # if time difference < 5 hours -> duplicated
-        limit = 5 * 3600
+        # if time difference < some hours -> duplicated
+        limit = time_threshold * 3600
         if time_diff < limit:
             obj_id = new_articles[i]['_id']
             if obj_id not in duplicated_document_ids:
@@ -118,7 +118,7 @@ def check_duplicated_titles(threshold=0.8):
     cosine_sim_matrix = cosine_similarity(new_tfidf_matrix, dense_output=False)
     rows, cols = cosine_sim_matrix.nonzero()
     values = cosine_sim_matrix.data
-    filter_index = np.where(values >= threshold)[0]
+    filter_index = np.where(values >= similarity_threshold)[0]
     result = [(rows[i], cols[i]) for i in filter_index if rows[i] < cols[i]]
     
     for i, j in result:
@@ -126,8 +126,8 @@ def check_duplicated_titles(threshold=0.8):
         date_j = new_articles[j]['published_date']
         time_diff = abs((date_i - date_j).total_seconds())
 
-        # if time difference < 5 hours -> duplicated
-        limit = 5 * 3600
+        # if time difference < some hours -> duplicated
+        limit = time_threshold * 3600
         if time_diff < limit:
             obj_id = new_articles[j]['_id']
             if obj_id not in duplicated_document_ids:
@@ -213,16 +213,16 @@ def update_database():
     
 
 def update_new_articles():
-    print('\nCrawl all new articles')
-    crawl_all_new_articles()
+    print('\nStep 1: Crawl all new articles')
+    crawl_new_articles()
     
-    print('\nCheck for duplicated titles')
+    print('\nStep 2: Check for duplicated titles')
     check_duplicated_titles(0.6)
 
-    print('\nUpdate nndescent index')
+    print('\nStep 3: Update nndescent index')
     update_nndescent_index()
     
-    print('\nUpdate database')
+    print('\nStep 4: Update database')
     update_database()
 
     
