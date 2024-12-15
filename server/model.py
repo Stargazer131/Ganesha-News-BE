@@ -63,5 +63,9 @@ class ShortArticle(BaseModel):
 
 class ArticleRecommendation(BaseModel):
     article: Article
-    recommendations: list[ShortArticle]  
+    recommendations: list[ShortArticle]
 
+
+class SearchResponse(BaseModel):
+    articles: list[ShortArticle]
+    total: int

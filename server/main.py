@@ -1,7 +1,7 @@
 from typing import Annotated
 from fastapi import FastAPI, Query, HTTPException
 from pymongo import MongoClient
-from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId
+from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
 from server.data import load_nndescent
 
 
@@ -47,7 +47,7 @@ def get_article_and_recommendations_by_id(
     return ArticleRecommendation(article=article, recommendations=recommendations)
 
 
-@app.get("/search/")
+@app.get("/search/", response_model=SearchResponse)
 def get_articles_by_keyword(
     keyword: str,
     limit: Annotated[int, Query(ge=1, le=50)] = 30,
@@ -71,11 +71,10 @@ def get_articles_by_keyword(
     description_query["_id"] = {"$nin": title_ids}
     description_articles = list(db['newspaper'].find(description_query, fields).sort(sort_criteria))
 
-    articles = title_articles + description_articles
-    start_index = min(len(articles) - 1, (page - 1) * limit)
-    end_index = min(len(articles), page * limit)
+    combined_articles = title_articles + description_articles
+    start_index = min(len(combined_articles) - 1, (page - 1) * limit)
+    end_index = min(len(combined_articles), page * limit)
 
-    return {
-        "articles": [ShortArticle(**article) for article in articles[start_index : end_index]],
-        "total": len(articles)
-    }
+    articles = [ShortArticle(**article) for article in combined_articles[start_index : end_index]]
+    return SearchResponse(articles=articles, total=len(combined_articles))
+
