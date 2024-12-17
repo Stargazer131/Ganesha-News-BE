@@ -65,6 +65,37 @@ def crawl_new_articles():
     return True
 
 
+def demo_crawl_new_articles(limit=5):
+    if not data.is_collection_empty_or_not_exist('temporary_newspaper'):
+        print('New articles have been crawled!')
+        return False
+    
+    articles = []
+    black_list = []
+                
+    for category in VnexpressCrawler.categories:
+        temp_articles, temp_black_list = VnexpressCrawler.crawl_articles(category, limit)
+        articles.extend(temp_articles)
+        black_list.extend(
+            [{"link": link, "web": VnexpressCrawler.web_name} for link in temp_black_list]
+        )
+
+    with MongoClient("mongodb://localhost:27017/") as client:
+        db = client['Ganesha_News']
+
+        if len(articles) > 0:
+            random.shuffle(articles)
+            collection = db['temporary_newspaper']
+            collection.insert_many(articles)
+            
+        if len(black_list) > 0:
+            black_collection = db['black_list']
+            black_collection.insert_many(black_list)
+
+    print(f"\nCrawl {data.total_documents('temporary_newspaper')} new articles!\n")
+    return True
+
+
 def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
     # load database (old) and newly crawled article
     old_articles = data.get_titles('newspaper')
@@ -210,11 +241,14 @@ def update_database():
         temp_collection.drop()
         
         return True
-    
 
-def update_new_articles():
+
+def update_new_articles(demo=False):
     print('\nStep 1: Crawl all new articles')
-    crawl_new_articles()
+    if demo:
+        demo_crawl_new_articles()
+    else:
+        crawl_new_articles()
     
     print('\nStep 2: Check for duplicated titles')
     check_duplicated_titles(0.6)

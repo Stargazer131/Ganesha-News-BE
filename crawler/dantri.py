@@ -103,16 +103,9 @@ class DantriCrawler:
             return article_id
 
     @staticmethod
-    def crawl_article_links(category: str, max_page=30):
+    def crawl_article_links(category: str, max_page=30, limit=10 ** 9):
         """
         Crawl all article link for a specific category.
-
-        Parameters
-        ----------
-        category : str
-            The category from which to crawl article links.
-        max_page : int
-            Maximum number of pages to crawl from
 
         Returns
         ----------
@@ -132,7 +125,8 @@ class DantriCrawler:
 
         # dantri has maximum 30 page
         max_page = min(max_page, 30)
-        while page_num <= max_page:
+        founded_links = 0
+        while page_num <= max_page and founded_links < limit:
             print(f"\rCrawling links [{page_num} / {max_page}]", end='')
 
             sleep(0.1)
@@ -172,8 +166,13 @@ class DantriCrawler:
                     # check for duplicated and "black" link
                     if article_id not in article_link_ids and article_id not in article_black_list_ids:
                         found_new_link = True
+                        founded_links += 1
                         article_link_ids.add(article_id)
                         link_and_thumbnails.append((article_link, image_link))
+
+                    if founded_links >= limit:
+                        print(f"\nFounded links passed the {limit} limit, terminate the searching!")
+                        break
                         
                 if not found_new_link:
                     print(f"\nNo new link found, terminate the searching!")
@@ -312,7 +311,7 @@ class DantriCrawler:
                     'published_date': published_date,
                     'thumbnail': '',
                     'title': h1_title.get_text().strip(),
-                    'description': description,
+                    'description': description.strip(),
                     'content': content_list,
                     'web': DantriCrawler.web_name,
                     'index': -1
@@ -324,14 +323,9 @@ class DantriCrawler:
             return (link, e)
 
     @staticmethod
-    def crawl_articles(category: str):
+    def crawl_articles(category: str, links_limit=10 ** 9):
         """
         Crawl all articles for the given category and log all errors.
-
-        Parameters
-        ----------
-        category : str
-            The category for which to crawl articles.
 
         Returns
         ----------
@@ -342,7 +336,7 @@ class DantriCrawler:
 
         fail_attempt = 0
         articles = []
-        article_links, black_list = DantriCrawler.crawl_article_links(category)
+        article_links, black_list = DantriCrawler.crawl_article_links(category, limit=links_limit)
         fail_list = []
         print(f'Crawl articles for category: {category}')
 
