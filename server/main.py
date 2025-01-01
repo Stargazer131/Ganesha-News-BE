@@ -3,13 +3,26 @@ from fastapi import FastAPI, Query, HTTPException
 from pymongo import MongoClient
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
 from server.data import load_nndescent
+from fastapi.middleware.cors import CORSMiddleware
 
+origins = [
+    "http://localhost:3000",
+    "https://recently-profound-crab.ngrok-free.app",
+    "https://stargazer131.github.io",
+]
 
 app = FastAPI()
 client = MongoClient("mongodb://localhost:27017")
 db = client["Ganesha_News"]
 nndescent = load_nndescent()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/articles/", response_model=list[ShortArticle])
 def get_articles_by_category(
@@ -27,7 +40,7 @@ def get_articles_by_category(
     return [ShortArticle(**article) for article in articles]
 
 
-@app.get("/articles/{article_id}", response_model=ArticleRecommendation)
+@app.get("/article/{article_id}", response_model=ArticleRecommendation)
 def get_article_and_recommendations_by_id(
     article_id: PyObjectId, 
     limit: Annotated[int, Query(ge=5, le=20)] = 10,
@@ -37,7 +50,7 @@ def get_article_and_recommendations_by_id(
         raise HTTPException(404, "Article not found")
     
     res_index = nndescent.neighbor_graph[0][article['index']]
-    filter_index = [int(num) for num in res_index[1 : limit + 1]]
+    filter_index = res_index.astype(int).tolist()[1 : limit + 1]
     query = {"index": {"$in": filter_index}}
     fields = {"title": 1, "description": 1, "thumbnail": 1}
 
@@ -51,7 +64,7 @@ def get_article_and_recommendations_by_id(
 def get_articles_by_keyword(
     keyword: str,
     limit: Annotated[int, Query(ge=1, le=50)] = 30,
-    page: Annotated[int, Query(ge=1, le=100)] = 1,
+    page: Annotated[int, Query(ge=1, le=50)] = 1,
 ):
     title_query = {
         "$or": [
@@ -61,7 +74,11 @@ def get_articles_by_keyword(
         ]
     }
     description_query = {
-        "title": { "$regex": f"\\s+{keyword}\\s+", "$options": "i" },
+        "$or": [
+            { "description": { "$regex": f"\\s+{keyword}$", "$options": "i" } },
+            { "description": { "$regex": f"^{keyword}\\s+", "$options": "i" } },
+            { "description": { "$regex": f"\\s+{keyword}\\s+", "$options": "i" } }
+        ]
     }
     fields = {"title": 1, "description": 1, "thumbnail": 1}
     sort_criteria = {"published_date": -1}
@@ -76,5 +93,5 @@ def get_articles_by_keyword(
     end_index = min(len(combined_articles), page * limit)
 
     articles = [ShortArticle(**article) for article in combined_articles[start_index : end_index]]
-    return SearchResponse(articles=articles, total=len(combined_articles))
+    return SearchResponse(articles=articles, total=min(len(combined_articles), limit * 50))
 
