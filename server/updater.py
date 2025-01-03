@@ -11,13 +11,11 @@ import random
 from gensim.models import LdaModel
 from gensim.corpora import Dictionary
 from gensim.matutils import sparse2full
+import requests
+from time import sleep
 
 
-def crawl_new_articles():
-    if not data.is_collection_empty_or_not_exist('temporary_newspaper'):
-        print('New articles have been crawled!')
-        return False
-    
+def crawl_new_articles():    
     articles = []
     black_list = []
                 
@@ -62,23 +60,43 @@ def crawl_new_articles():
             black_collection.insert_many(black_list)
 
     print(f"\nCrawl {data.total_documents('temporary_newspaper')} new articles!\n")
-    return True
 
 
-def demo_crawl_new_articles(limit=5):
-    if not data.is_collection_empty_or_not_exist('temporary_newspaper'):
-        print('New articles have been crawled!')
-        return False
-    
+def demo_crawl_new_articles(vnexpress=False, dantri=False, vietnamnet=False, vtcnews=False, limit=5):    
     articles = []
     black_list = []
                 
-    for category in VnexpressCrawler.categories:
-        temp_articles, temp_black_list = VnexpressCrawler.crawl_articles(category, limit)
-        articles.extend(temp_articles)
-        black_list.extend(
-            [{"link": link, "web": VnexpressCrawler.web_name} for link in temp_black_list]
-        )
+    if vnexpress:
+        for category in VnexpressCrawler.categories:
+            temp_articles, temp_black_list = VnexpressCrawler.crawl_articles(category, limit)
+            articles.extend(temp_articles)
+            black_list.extend(
+                [{"link": link, "web": VnexpressCrawler.web_name} for link in temp_black_list]
+            )
+
+    if dantri:
+        for category in DantriCrawler.categories:
+            temp_articles, temp_black_list = DantriCrawler.crawl_articles(category, limit)
+            articles.extend(temp_articles)
+            black_list.extend(
+                [{"link": link, "web": DantriCrawler.web_name} for link in temp_black_list]
+            )
+
+    if vietnamnet:
+        for category in VietnamnetCrawler.categories:
+            temp_articles, temp_black_list = VietnamnetCrawler.crawl_articles(category, limit)
+            articles.extend(temp_articles)
+            black_list.extend(
+                [{"link": link, "web": VietnamnetCrawler.web_name} for link in temp_black_list]
+            )
+
+    if vtcnews:
+        for category in VtcnewsCrawler.categories:
+            temp_articles, temp_black_list = VtcnewsCrawler.crawl_articles(category, limit)
+            articles.extend(temp_articles)
+            black_list.extend(
+                [{"link": link, "web": VtcnewsCrawler.web_name} for link in temp_black_list]
+            )
 
     with MongoClient("mongodb://localhost:27017/") as client:
         db = client['Ganesha_News']
@@ -93,7 +111,6 @@ def demo_crawl_new_articles(limit=5):
             black_collection.insert_many(black_list)
 
     print(f"\nCrawl {data.total_documents('temporary_newspaper')} new articles!\n")
-    return True
 
 
 def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
@@ -102,12 +119,7 @@ def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
     new_articles = data.get_titles('temporary_newspaper')
     
     print('Preprocessing titles')
-    old_titles = data.load_processed_titles()
-    
-    if len(old_titles) > len(old_articles):
-        print('Duplicated titles have been checked!')
-        return False
-    
+    old_titles = data.load_processed_titles()    
     new_titles = [data.process_title(doc['title']) for doc in new_articles]
     
     # create 2 separate matrix 
@@ -187,17 +199,11 @@ def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
     print('Update processed titles list')
     new_titles = [title for i, title in enumerate(new_titles) if i not in remove_indices]
     data.save_processed_titles(old_titles + new_titles)
-    
-    return True
-    
+
 
 def update_nndescent_index():
     print('Load models')
     nndescent = data.load_nndescent()
-    if nndescent.neighbor_graph[0].shape[0] == len(data.load_processed_titles()):
-        print('Index graph has been updated!')
-        return False
-
     lda_model = LdaModel.load('data/lda_model/lda_model_30')
     dictionary = Dictionary.load('data/lda_model/dictionary')
     
@@ -222,10 +228,6 @@ def update_nndescent_index():
 
 
 def update_database():
-    if data.is_collection_empty_or_not_exist('temporary_newspaper'):
-        print('Articles have been updated to original database')
-        return False
-
     with MongoClient("mongodb://localhost:27017/") as client:
         db = client['Ganesha_News']
         collection = db['newspaper']
@@ -240,16 +242,28 @@ def update_database():
         result = collection.insert_many(articles)
         print(f'Copy {len(result.inserted_ids)} articles to original database')
         temp_collection.drop()
-        
-        return True
 
 
-def update_new_articles(demo=False):
+def notify_server():
+    url = "http://127.0.0.1:8000/reload-model"
+    response = requests.post(url)
+    
+    if response.status_code == 200:
+        print('Update model successfully')
+    else:
+        print('Fail to update model')
+
+
+def update_new_articles(demo):
     print('\nStep 1: Crawl all new articles')
     if demo:
-        demo_crawl_new_articles()
+        demo_crawl_new_articles(dantri=True, limit=3)
     else:
         crawl_new_articles()
+
+    if data.is_collection_empty_or_not_exist('temporary_newspaper'):
+        print('No new articles have been found')
+        return
     
     print('\nStep 2: Check for duplicated titles')
     check_duplicated_titles(0.6)
@@ -260,7 +274,10 @@ def update_new_articles(demo=False):
     print('\nStep 4: Update database')
     update_database()
 
+    print('\nNotify server!')
+    notify_server()
+
     
 if __name__ == '__main__':
-    update_new_articles()
+    update_new_articles(demo=True)
 

@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from pymongo import MongoClient
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
 from server.data import load_neighbor_graph
@@ -104,4 +104,16 @@ def get_articles_by_keyword(
 
     articles = [ShortArticle(**article) for article in combined_articles[start_index : end_index]]
     return SearchResponse(articles=articles, total=min(len(combined_articles), limit * 50))
+
+
+@app.post("/reload-model")
+def reload_model(request: Request):
+    client_host = request.client.host
+    if client_host not in ["127.0.0.1", "::1"]:
+        raise HTTPException(status_code=403, detail="Access forbidden")
+    
+    global neighbor_graph
+    neighbor_graph = load_neighbor_graph()
+
+    return {"message": "Model reloaded successfully"}
 
