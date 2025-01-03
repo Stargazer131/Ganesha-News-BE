@@ -218,6 +218,7 @@ def update_nndescent_index():
     print('Update the index')
     nndescent.update(corpus_topic_distributions)
     data.save_nndescent(nndescent)
+    data.save_neighbor_graph(nndescent.neighbor_graph[0])
 
 
 def update_database():

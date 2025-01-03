@@ -2,17 +2,17 @@ from typing import Annotated
 from fastapi import FastAPI, Query, HTTPException
 from pymongo import MongoClient
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
-from server.data import load_nndescent
+from server.data import load_neighbor_graph
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global database, nndescent
+    global database, neighbor_graph
     client = MongoClient("mongodb://localhost:27017")
     database = client["Ganesha_News"]
-    nndescent = load_nndescent()
+    neighbor_graph = load_neighbor_graph()
 
     yield
     client.close()
@@ -59,7 +59,7 @@ def get_article_and_recommendations_by_id(
     if article is None:
         raise HTTPException(404, "Article not found")
     
-    res_index = nndescent.neighbor_graph[0][article['index']]
+    res_index = neighbor_graph[article['index']]
     filter_index = res_index.astype(int).tolist()[1 : limit + 1]
     query = {"index": {"$in": filter_index}}
     fields = {"title": 1, "description": 1, "thumbnail": 1}

@@ -9,6 +9,7 @@ from pymongo import ASCENDING, DESCENDING
 import unicodedata
 import pickle
 from pynndescent import NNDescent
+import numpy as np
 
 
 def caculate_time(func: callable):
@@ -27,6 +28,14 @@ def load_nndescent() -> NNDescent:
 def save_nndescent(nndescent: NNDescent):
     with open('data/nndescent.pkl', "wb") as f:
         pickle.dump(nndescent, f)
+
+
+def save_neighbor_graph(graph: np.ndarray):
+  np.save('data/neighbor_graph.npy', graph)
+
+
+def load_neighbor_graph() -> np.ndarray:
+  return np.load('data/neighbor_graph.npy')
 
 
 def load_processed_titles() -> list[str]:
