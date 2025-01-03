@@ -4,17 +4,27 @@ from pymongo import MongoClient
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
 from server.data import load_nndescent
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global database, nndescent
+    client = MongoClient("mongodb://localhost:27017")
+    database = client["Ganesha_News"]
+    nndescent = load_nndescent()
+
+    yield
+    client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:3000",
     "https://recently-profound-crab.ngrok-free.app",
     "https://stargazer131.github.io",
 ]
-
-app = FastAPI()
-client = MongoClient("mongodb://localhost:27017")
-db = client["Ganesha_News"]
-nndescent = load_nndescent()
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,7 +46,7 @@ def get_articles_by_category(
     if category != Category.latest:
         query = {"category": category}
     
-    articles = db['newspaper'].find(query, fields).sort(sort_criteria).skip((page - 1) * limit).limit(limit)
+    articles = database['newspaper'].find(query, fields).sort(sort_criteria).skip((page - 1) * limit).limit(limit)
     return [ShortArticle(**article) for article in articles]
 
 
@@ -45,7 +55,7 @@ def get_article_and_recommendations_by_id(
     article_id: PyObjectId, 
     limit: Annotated[int, Query(ge=5, le=20)] = 10,
 ):    
-    article = db['newspaper'].find_one({"_id": article_id})
+    article = database['newspaper'].find_one({"_id": article_id})
     if article is None:
         raise HTTPException(404, "Article not found")
     
@@ -54,7 +64,7 @@ def get_article_and_recommendations_by_id(
     query = {"index": {"$in": filter_index}}
     fields = {"title": 1, "description": 1, "thumbnail": 1}
 
-    recommendation_list = db['newspaper'].find(query, fields)
+    recommendation_list = database['newspaper'].find(query, fields)
     article = Article(**article)
     recommendations = [ShortArticle(**item) for item in recommendation_list]
     return ArticleRecommendation(article=article, recommendations=recommendations)
@@ -83,10 +93,10 @@ def get_articles_by_keyword(
     fields = {"title": 1, "description": 1, "thumbnail": 1}
     sort_criteria = {"published_date": -1}
 
-    title_articles = list(db['newspaper'].find(title_query, fields).sort(sort_criteria))
+    title_articles = list(database['newspaper'].find(title_query, fields).sort(sort_criteria))
     title_ids = [article["_id"] for article in title_articles]
     description_query["_id"] = {"$nin": title_ids}
-    description_articles = list(db['newspaper'].find(description_query, fields).sort(sort_criteria))
+    description_articles = list(database['newspaper'].find(description_query, fields).sort(sort_criteria))
 
     combined_articles = title_articles + description_articles
     start_index = min(len(combined_articles) - 1, (page - 1) * limit)
