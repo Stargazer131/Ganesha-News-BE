@@ -59,7 +59,7 @@ def crawl_new_articles():
             black_collection = db['black_list']
             black_collection.insert_many(black_list)
 
-    print(f"\nCrawl {data.total_documents('temporary_newspaper')} new articles!\n")
+    print(f"\nCrawled {data.total_documents('temporary_newspaper')} new articles!\n")
 
 
 def demo_crawl_new_articles(vnexpress=False, dantri=False, vietnamnet=False, vtcnews=False, limit=5):    
@@ -114,7 +114,7 @@ def demo_crawl_new_articles(vnexpress=False, dantri=False, vietnamnet=False, vtc
 
 
 def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
-    # load database (old) and newly crawled article
+    # load database (old) and newly crawled articles
     old_articles = data.get_titles('newspaper')
     new_articles = data.get_titles('temporary_newspaper')
     
@@ -195,15 +195,13 @@ def check_duplicated_titles(similarity_threshold=0.8, time_threshold=5):
             result = b_collection.insert_many(black_list)
             print(f'Added {len(result.inserted_ids)} black list document')
             
-    # update processed list
     print('Update processed titles list')
     new_titles = [title for i, title in enumerate(new_titles) if i not in remove_indices]
     data.save_processed_titles(old_titles + new_titles)
 
 
 def update_nndescent_index():
-    print('Load models')
-    nndescent = data.load_nndescent()
+    print('Load LDA model')
     lda_model = LdaModel.load('data/lda_model/lda_model_30')
     dictionary = Dictionary.load('data/lda_model/dictionary')
     
@@ -221,7 +219,8 @@ def update_nndescent_index():
     lda_corpus = lda_model[corpus]
     corpus_topic_distributions = np.array([sparse2full(vec, lda_model.num_topics) for vec in lda_corpus])
     
-    print('Update the index')
+    print('Updating nndescent index')
+    nndescent = data.load_nndescent()
     nndescent.update(corpus_topic_distributions)
     data.save_nndescent(nndescent)
     data.save_neighbor_graph(nndescent.neighbor_graph[0])
@@ -246,18 +245,20 @@ def update_database():
 
 def notify_server():
     url = "http://127.0.0.1:8000/reload-model"
-    response = requests.post(url)
-    
-    if response.status_code == 200:
-        print('Update model successfully')
-    else:
-        print('Fail to update model')
+    try:
+        response = requests.post(url)
+        if response.status_code == 200:
+            print('Update model successfully')
+        else:
+            print('Fail to update model')
+    except:
+        print('Server not responding')
 
 
-def update_new_articles(demo):
-    print('\nStep 1: Crawl all new articles')
+def update_new_articles(demo: bool):
+    print('\nStep 1: Crawl new articles')
     if demo:
-        demo_crawl_new_articles(dantri=True, limit=3)
+        demo_crawl_new_articles(vnexpress=True, limit=3)
     else:
         crawl_new_articles()
 
@@ -268,7 +269,7 @@ def update_new_articles(demo):
     print('\nStep 2: Check for duplicated titles')
     check_duplicated_titles(0.6)
 
-    print('\nStep 3: Update nndescent index')
+    print('\nStep 3: Update ANN model')
     update_nndescent_index()
     
     print('\nStep 4: Update database')

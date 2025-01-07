@@ -5,6 +5,7 @@ from server.model import Article, Category, ArticleRecommendation, ShortArticle,
 from server.data import load_neighbor_graph
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import re
 
 
 @asynccontextmanager
@@ -76,29 +77,20 @@ def get_articles_by_keyword(
     limit: Annotated[int, Query(ge=1, le=50)] = 30,
     page: Annotated[int, Query(ge=1, le=50)] = 1,
 ):
-    title_query = {
+    regex_pattern = re.compile(
+        fr"(?:\s+[“'\"]?{keyword}[”'\"]?$|^[“'\"]?{keyword}[”'\"]?\s+|\s+[“'\"]?{keyword}[”'\"]?\s+)", re.IGNORECASE
+    )
+
+    query = {
         "$or": [
-            { "title": { "$regex": f"\\s+{keyword}$", "$options": "i" } },
-            { "title": { "$regex": f"^{keyword}\\s+", "$options": "i" } },
-            { "title": { "$regex": f"\\s+{keyword}\\s+", "$options": "i" } }
-        ]
-    }
-    description_query = {
-        "$or": [
-            { "description": { "$regex": f"\\s+{keyword}$", "$options": "i" } },
-            { "description": { "$regex": f"^{keyword}\\s+", "$options": "i" } },
-            { "description": { "$regex": f"\\s+{keyword}\\s+", "$options": "i" } }
+            {"title": {"$regex": regex_pattern}},
+            {"description": {"$regex": regex_pattern}}
         ]
     }
     fields = {"title": 1, "description": 1, "thumbnail": 1}
     sort_criteria = {"published_date": -1}
 
-    title_articles = list(database['newspaper'].find(title_query, fields).sort(sort_criteria))
-    title_ids = [article["_id"] for article in title_articles]
-    description_query["_id"] = {"$nin": title_ids}
-    description_articles = list(database['newspaper'].find(description_query, fields).sort(sort_criteria))
-
-    combined_articles = title_articles + description_articles
+    combined_articles = list(database['newspaper'].find(query, fields).sort(sort_criteria))
     start_index = min(len(combined_articles) - 1, (page - 1) * limit)
     end_index = min(len(combined_articles), page * limit)
 
@@ -106,7 +98,7 @@ def get_articles_by_keyword(
     return SearchResponse(articles=articles, total=min(len(combined_articles), limit * 50))
 
 
-@app.post("/reload-model")
+@app.post("/reload-model", include_in_schema=False)
 def reload_model(request: Request):
     client_host = request.client.host
     if client_host not in ["127.0.0.1", "::1"]:
