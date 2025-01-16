@@ -21,41 +21,49 @@ def caculate_time(func: callable):
 
 
 def load_nndescent() -> NNDescent:
-    with open('data/nndescent.pkl', "rb") as f:
+    with open('data/ann_model/nndescent.pkl', "rb") as f:
         return pickle.load(f)
     
     
 def save_nndescent(nndescent: NNDescent):
-    with open('data/nndescent.pkl', "wb") as f:
+    with open('data/ann_model/nndescent.pkl', "wb") as f:
         pickle.dump(nndescent, f)
 
 
 def save_neighbor_graph(graph: np.ndarray):
-  np.save('data/neighbor_graph.npy', graph)
+  np.save('data/ann_model/neighbor_graph.npy', graph)
 
 
 def load_neighbor_graph() -> np.ndarray:
-  return np.load('data/neighbor_graph.npy')
+  return np.load('data/ann_model/neighbor_graph.npy')
+
+
+def save_topic_distributions(matrix: np.ndarray):
+  np.save('data/ann_model/topic_distributions.npy', matrix)
+
+
+def load_topic_distributions() -> np.ndarray:
+  return np.load('data/ann_model/topic_distributions.npy')
 
 
 def load_processed_titles() -> list[str]:
-    with open('data/processed_titles.pkl', "rb") as f:
+    with open('data/preprocess/processed_titles.pkl', "rb") as f:
         return pickle.load(f)
     
     
 def save_processed_titles(processed_titles: list[str]):
-    with open('data/processed_titles.pkl', "wb") as f:
+    with open('data/preprocess/processed_titles.pkl', "wb") as f:
         pickle.dump(processed_titles, f)
 
 
 def load_stop_words():
-    with open('data/vietnamese-stopwords.txt', 'r', encoding='utf-8') as file:
+    with open('data/preprocess/vietnamese-stopwords.txt', 'r', encoding='utf-8') as file:
         data = file.readlines()
         return set([word.strip() for word in data])
     
 
 def load_fixed_words():
-    with open('data/fixed-words.txt', 'r', encoding='utf-8') as file:
+    with open('data/preprocess/fixed-words.txt', 'r', encoding='utf-8') as file:
         data = file.readlines()
         return set([word.strip() for word in data])
 
@@ -179,12 +187,11 @@ def count_category_document():
         print(f'Category {key} has {value} documents')
 
 
-def bulk_update():
+def reset_index():
     client = MongoClient('mongodb://localhost:27017/')
     db = client['Ganesha_News']
     collection = db['newspaper']
 
-    # Define the update operation
     bulk_updates = []
     index = 0
     for doc in collection.find({}, {"_id": 1}):
@@ -195,9 +202,8 @@ def bulk_update():
             )
         )
         index += 1
-
     result = collection.bulk_write(bulk_updates)
-    print(f"Modified {result.modified_count} documents.")
+    return result.modified_count
 
 
 def shuffle_database():
