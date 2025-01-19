@@ -142,7 +142,9 @@ class DantriCrawler:
                 article_tags = soup.find_all('article', class_='article-item')
                 for article_tag in article_tags:
                     a_tag = article_tag.find('a')
-                    article_link = f'{DantriCrawler.root_url}{a_tag["href"]}'
+                    article_link = a_tag["href"]
+                    if not article_link.startswith(DantriCrawler.root_url):
+                        article_link = DantriCrawler.root_url + a_tag["href"]
                     img_tag = article_tag.find('img')
                     article_id = DantriCrawler.extract_id(article_link)
 
