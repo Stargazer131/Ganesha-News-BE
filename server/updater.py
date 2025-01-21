@@ -362,7 +362,3 @@ def update_new_articles(demo: bool):
     print('\nNotify server!')
     notify_server()
 
-    
-if __name__ == '__main__':
-    update_new_articles(demo=True)
-
