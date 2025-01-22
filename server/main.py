@@ -1,19 +1,29 @@
+import asyncio
 from typing import Annotated
 from fastapi import FastAPI, Query, HTTPException, Request
-from pymongo import MongoClient
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
-from server.data import load_neighbor_graph
+from server.data import load_neighbor_graph, connect_to_mongo
+from server.updater import update_new_articles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import re
 
 
+async def periodic_task():
+    global neighbor_graph
+    await asyncio.sleep(60 * 10)
+    while True:
+        neighbor_graph = await asyncio.to_thread(update_new_articles)
+        await asyncio.sleep(60 * 60 * 12)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global database, neighbor_graph
-    client = MongoClient("mongodb://localhost:27017")
+    client = connect_to_mongo()
     database = client["Ganesha_News"]
     neighbor_graph = load_neighbor_graph()
+    asyncio.create_task(periodic_task())
 
     yield
     client.close()

@@ -1,11 +1,8 @@
-import random
 from time import time
-from pymongo import MongoClient
 import json
 import os
 from underthesea import sent_tokenize, word_tokenize
-from pymongo import MongoClient, UpdateOne
-from pymongo import ASCENDING, DESCENDING
+from pymongo import MongoClient
 import unicodedata
 import pickle
 from pynndescent import NNDescent
@@ -18,6 +15,11 @@ def caculate_time(func: callable):
     end_time = time()
     executed_time = end_time - start_time
     print(f'Executed time: {executed_time:.3f}s')
+
+
+def connect_to_mongo():
+    connect_str = "mongodb://localhost:27017"
+    return MongoClient(connect_str)
 
 
 def load_nndescent() -> NNDescent:
@@ -122,7 +124,7 @@ def process_title(title: str):
 
 
 def get_titles(collection_name: str):
-    with MongoClient('mongodb://localhost:27017/') as client:
+    with connect_to_mongo() as client:
         db = client['Ganesha_News']
         collection = db[collection_name]
         projection = {"published_date": 1, "link": 1, "web": 1, "title": 1}
@@ -130,7 +132,7 @@ def get_titles(collection_name: str):
     
     
 def get_content(collection_name: str):
-    with MongoClient('mongodb://localhost:27017/') as client:
+    with connect_to_mongo() as client:
         db = client['Ganesha_News']
         collection = db[collection_name]
         projection = {"title": 1, "description": 1, "content": 1}
@@ -138,14 +140,14 @@ def get_content(collection_name: str):
 
 
 def total_documents(collection_name: str):
-    with MongoClient('mongodb://localhost:27017/') as client:
+    with connect_to_mongo() as client:
         db = client['Ganesha_News']
         collection = db[collection_name]
         return collection.count_documents({})
     
 
 def is_collection_empty_or_not_exist(collection_name: str):
-    with MongoClient('mongodb://localhost:27017/') as client:
+    with connect_to_mongo() as client:
         db = client['Ganesha_News']
 
         if collection_name not in db.list_collection_names():
@@ -158,100 +160,20 @@ def is_collection_empty_or_not_exist(collection_name: str):
 
 
 def backup_data(collection_name='newspaper'):
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    output_dir = f'data/Ganesha_News'
-    os.makedirs(output_dir, exist_ok=True)
-
-    collection = db[collection_name]
-    data = list(collection.find())
-
-    with open(os.path.join(output_dir, f'{collection_name}.json'), 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, default=str, ensure_ascii=False)
-
-    client.close()
-
-
-def count_category_document():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper']
-    category_map = {}
-    for doc in collection.find():
-        category = doc['category']
-        if category not in category_map:
-            category_map[category] = 0
-        category_map[category] += 1
-
-    for key, value in category_map.items():
-        print(f'Category {key} has {value} documents')
-
-
-def reset_index():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['Ganesha_News']
-    collection = db['newspaper']
-
-    bulk_updates = []
-    index = 0
-    for doc in collection.find({}, {"_id": 1}):
-        bulk_updates.append(
-            UpdateOne(
-                {"_id": doc["_id"]},
-                {"$set": {"index": index}}
-            )
-        )
-        index += 1
-    result = collection.bulk_write(bulk_updates)
-    return result.modified_count
-
-
-def shuffle_database():
-    collection_name = 'newspaper'
-    with MongoClient("mongodb://localhost:27017/") as client:
+    with connect_to_mongo() as client:
         db = client['Ganesha_News']
+        output_dir = f'data/Ganesha_News'
+        os.makedirs(output_dir, exist_ok=True)
+
         collection = db[collection_name]
         data = list(collection.find())
-        random.shuffle(data)
-        collection.drop()
 
-    with MongoClient("mongodb://localhost:27017/") as client:
-        db = client['Ganesha_News']
-        collection = db[collection_name]
-        for index, doc in enumerate(data):
-            doc['index'] = index
-        
-        result = collection.insert_many(data)
-        print(f'Shuffle {len(result.inserted_ids)} documents')
-
-        collection.create_index([("category", ASCENDING), ("published_date", DESCENDING)])
-        collection.create_index([("published_date", DESCENDING)])
-        collection.create_index([("index", ASCENDING)])
-
-
-def delete_duplicated_links(collection_name='black_list'):
-    with MongoClient("mongodb://localhost:27017/") as client:
-        db = client['Ganesha_News']
-        collection = db[collection_name]
-
-        # Step 1: Identify duplicates based on the 'link' field
-        pipeline = [
-            {"$group": {"_id": "$link", "ids": {"$addToSet": "$_id"}, "count": {"$sum": 1}}},
-            {"$match": {"count": {"$gt": 1}}}
-        ]
-
-        duplicates = collection.aggregate(pipeline)
-
-        # Step 2: Delete duplicates, keeping one document per 'link'
-        for doc in duplicates:
-            ids_to_delete = doc['ids'][1:]  # Keep the first ID, delete the rest
-            collection.delete_many({"_id": {"$in": ids_to_delete}})
-
-        print("Duplicate documents have been deleted.")
+        with open(os.path.join(output_dir, f'{collection_name}.json'), 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, default=str, ensure_ascii=False)
 
 
 def get_category_list(collection_name: str):
-    with MongoClient('mongodb://localhost:27017/') as client:
+    with connect_to_mongo() as client:
         db = client['Ganesha_News']
         collection = db[collection_name]
         projection = {"category": 1}
@@ -259,8 +181,7 @@ def get_category_list(collection_name: str):
     
 
 def test_accuracy(top_n=10):
-    nndescent = load_nndescent()
-    top_recommendations = nndescent.neighbor_graph[0]
+    top_recommendations = load_neighbor_graph()
     data = get_category_list('newspaper')
 
     correct_recommendation = 0

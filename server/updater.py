@@ -1,5 +1,5 @@
 import numpy as np
-from pymongo import MongoClient, UpdateOne
+from pymongo import UpdateOne
 from crawler.database.dantri import DantriCrawler
 from crawler.database.vietnamnet import VietnamnetCrawler
 from crawler.database.vnexpress import VnexpressCrawler
@@ -12,7 +12,6 @@ from gensim.models import LdaModel
 from gensim.corpora import Dictionary
 from gensim.matutils import sparse2full
 import requests
-from time import sleep
 import numba
 from pynndescent import NNDescent
 
@@ -92,54 +91,7 @@ def combined_distance(x, y):
     return (result_cos + result_jen + result_hel + result_jac) / 4
 
 
-def crawl_new_articles():    
-    articles = []
-    black_list = []
-                
-    for category in VnexpressCrawler.categories:
-        temp_articles, temp_black_list = VnexpressCrawler.crawl_articles(category)
-        articles.extend(temp_articles)
-        black_list.extend(
-            [{"link": link, "web": VnexpressCrawler.web_name} for link in temp_black_list]
-        )
-        
-    for category in DantriCrawler.categories:
-        temp_articles, temp_black_list = DantriCrawler.crawl_articles(category)
-        articles.extend(temp_articles)
-        black_list.extend(
-            [{"link": link, "web": DantriCrawler.web_name} for link in temp_black_list]
-        )
-    
-    for category in VietnamnetCrawler.categories:
-        temp_articles, temp_black_list = VietnamnetCrawler.crawl_articles(category)
-        articles.extend(temp_articles)
-        black_list.extend(
-            [{"link": link, "web": VietnamnetCrawler.web_name} for link in temp_black_list]
-        )
-        
-    for category in VtcnewsCrawler.categories:
-        temp_articles, temp_black_list = VtcnewsCrawler.crawl_articles(category)
-        articles.extend(temp_articles)
-        black_list.extend(
-            [{"link": link, "web": VtcnewsCrawler.web_name} for link in temp_black_list]
-        )
-
-    with MongoClient("mongodb://localhost:27017/") as client:
-        db = client['Ganesha_News']
-
-        if len(articles) > 0:
-            random.shuffle(articles)
-            collection = db['temporary_newspaper']
-            collection.insert_many(articles)
-            
-        if len(black_list) > 0:
-            black_collection = db['black_list']
-            black_collection.insert_many(black_list)
-
-    print(f"\nCrawled {data.total_documents('temporary_newspaper')} new articles!\n")
-
-
-def demo_crawl_new_articles(vnexpress=False, dantri=False, vietnamnet=False, vtcnews=False, limit=5):    
+def crawl_new_articles(vnexpress: bool, dantri: bool, vietnamnet: bool, vtcnews: bool, limit: int):    
     articles = []
     black_list = []
                 
@@ -175,7 +127,7 @@ def demo_crawl_new_articles(vnexpress=False, dantri=False, vietnamnet=False, vtc
                 [{"link": link, "web": VtcnewsCrawler.web_name} for link in temp_black_list]
             )
 
-    with MongoClient("mongodb://localhost:27017/") as client:
+    with data.connect_to_mongo() as client:
         db = client['Ganesha_News']
 
         if len(articles) > 0:
@@ -245,7 +197,7 @@ def check_duplicated_titles(similarity_threshold=0.75, time_threshold_in_days=1.
         {"link": articles[id]['link'], "web": articles[id]['web']} for id in dup_index
     ]
 
-    with MongoClient("mongodb://localhost:27017/") as client:
+    with data.connect_to_mongo() as client:
         db = client['Ganesha_News']
         collection = db['newspaper']
         temp_collection = db['temporary_newspaper']
@@ -311,7 +263,7 @@ def update_nndescent_index():
 
 
 def update_database():
-    with MongoClient("mongodb://localhost:27017/") as client:
+    with data.connect_to_mongo() as client:
         db = client['Ganesha_News']
         collection = db['newspaper']
         temp_collection = db['temporary_newspaper']
@@ -339,26 +291,21 @@ def notify_server():
         print('Server not responding')
 
 
-def update_new_articles(demo: bool):
+def update_new_articles(vnexpress=True, dantri=True, vietnamnet=True, vtcnews=True, limit=10 ** 9):
     print('\nStep 1: Crawl new articles')
-    if demo:
-        demo_crawl_new_articles(vnexpress=True, limit=1)
-    else:
-        crawl_new_articles()
+    crawl_new_articles(vnexpress, dantri, vietnamnet, vtcnews, limit)
 
     if data.is_collection_empty_or_not_exist('temporary_newspaper'):
         print('No new articles have been found')
-        return
-    
-    print('\nStep 2: Check for duplicated titles')
-    check_duplicated_titles()
+    else:
+        print('\nStep 2: Check for duplicated titles')
+        check_duplicated_titles()
 
-    print('\nStep 3: Update ANN model')
-    update_nndescent_index()
-    
-    print('\nStep 4: Update database')
-    update_database()
+        print('\nStep 3: Update ANN model')
+        update_nndescent_index()
+        
+        print('\nStep 4: Update database')
+        update_database()
 
-    print('\nNotify server!')
-    notify_server()
+    return data.load_neighbor_graph()
 

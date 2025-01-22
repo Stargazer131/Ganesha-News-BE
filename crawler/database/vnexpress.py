@@ -2,10 +2,10 @@ import os
 import re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from pymongo import MongoClient
 import requests
 from datetime import datetime
 from time import sleep
+from server.data import connect_to_mongo
 
 
 class VnexpressCrawler:
@@ -55,7 +55,7 @@ class VnexpressCrawler:
             Set of id.
         """
 
-        with MongoClient("mongodb://localhost:27017/") as client:
+        with connect_to_mongo() as client:
             db = client['Ganesha_News']
             collection = db['newspaper']
             cursor = collection.find({"web": VnexpressCrawler.web_name}, {"link": 1, "_id": 0})
@@ -77,7 +77,7 @@ class VnexpressCrawler:
             Set of id.
         """
 
-        with MongoClient("mongodb://localhost:27017/") as client:
+        with connect_to_mongo() as client:
             db = client['Ganesha_News']
             collection = db['black_list']
             cursor = collection.find({"web": VnexpressCrawler.web_name}, {"link": 1, "_id": 0})
