@@ -1,6 +1,6 @@
 import asyncio
 from typing import Annotated
-from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi import FastAPI, Query, HTTPException
 from server.model import Article, Category, ArticleRecommendation, ShortArticle, PyObjectId, SearchResponse
 from server.data import load_neighbor_graph, connect_to_mongo
 from server.updater import update_new_articles
@@ -11,7 +11,7 @@ import re
 
 async def periodic_task():
     global neighbor_graph
-    await asyncio.sleep(60 * 10)
+    await asyncio.sleep(5)
     while True:
         neighbor_graph = await asyncio.to_thread(update_new_articles)
         await asyncio.sleep(60 * 60 * 12)
@@ -108,14 +108,9 @@ def get_articles_by_keyword(
     return SearchResponse(articles=articles, total=min(len(combined_articles), limit * 50))
 
 
-@app.post("/reload-model", include_in_schema=False)
-def reload_model(request: Request):
-    client_host = request.client.host
-    if client_host not in ["127.0.0.1", "::1"]:
-        raise HTTPException(status_code=403, detail="Access forbidden")
-    
+@app.get("/reload-model", include_in_schema=False)
+def reload_model():    
     global neighbor_graph
     neighbor_graph = load_neighbor_graph()
-
     return {"message": "Model reloaded successfully"}
 

@@ -1,5 +1,5 @@
 from time import time
-import json
+from bson import json_util
 import os
 from underthesea import sent_tokenize, word_tokenize
 from pymongo import MongoClient
@@ -17,8 +17,8 @@ def caculate_time(func: callable):
     print(f'Executed time: {executed_time:.3f}s')
 
 
-def connect_to_mongo():
-    connect_str = "mongodb://localhost:27017"
+def connect_to_mongo(host='mongodb', port=27017):
+    connect_str = f"mongodb://{host}:{port}"
     return MongoClient(connect_str)
 
 
@@ -160,16 +160,18 @@ def is_collection_empty_or_not_exist(collection_name: str):
 
 
 def backup_data(collection_name='newspaper'):
-    with connect_to_mongo() as client:
+    with connect_to_mongo('localhost') as client:
         db = client['Ganesha_News']
         output_dir = f'data/Ganesha_News'
         os.makedirs(output_dir, exist_ok=True)
+        file_path = os.path.join(output_dir, f'{collection_name}.json')
 
         collection = db[collection_name]
         data = list(collection.find())
+        serialized_data = json_util.dumps(data, indent=4, ensure_ascii=False)
 
-        with open(os.path.join(output_dir, f'{collection_name}.json'), 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, default=str, ensure_ascii=False)
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(serialized_data)
 
 
 def get_category_list(collection_name: str):
@@ -196,8 +198,3 @@ def test_accuracy(top_n=10):
     print(f'Total correct recommendation: {correct_recommendation} / {len(top_recommendations) * top_n}')    
     print(f'Accuracy: {correct_recommendation / (len(top_recommendations) * float(top_n)) * 100 : .2f} %')
 
-
-if __name__ == '__main__':
-    test_accuracy(20)
-        
-        

@@ -14,7 +14,7 @@ from gensim.matutils import sparse2full
 import requests
 import numba
 from pynndescent import NNDescent
-
+ 
 
 FLOAT32_EPS = np.finfo(np.float32).eps
 FLOAT32_MAX = np.finfo(np.float32).max
@@ -279,8 +279,8 @@ def update_database():
         temp_collection.drop()
 
 
-def notify_server():
-    url = "http://127.0.0.1:8000/reload-model"
+def notify_server(host='127.0.0.1', port='8000'):
+    url = f"http://{host}:{port}/reload-model"
     try:
         response = requests.post(url)
         if response.status_code == 200:
