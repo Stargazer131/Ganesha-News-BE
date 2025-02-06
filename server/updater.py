@@ -146,56 +146,100 @@ def check_duplicated_titles(similarity_threshold=0.75, time_threshold_in_days=1.
     # load database (old) and newly crawled articles
     old_articles = data.get_titles('newspaper')
     new_articles = data.get_titles('temporary_newspaper')
-    articles = old_articles + new_articles
     last_database_index = len(old_articles)
     
     print('Preprocessing titles')
     old_titles = data.load_processed_titles()    
     new_titles = [data.process_title(doc['title']) for doc in new_articles]
-    titles = old_titles + new_titles
     vectorizer = TfidfVectorizer(lowercase=False)
-    tfidf_matrix = vectorizer.fit_transform(titles)
-    dup_index = set()
+    tfidf_matrix = vectorizer.fit_transform(old_titles + new_titles)
+    old_articles_matrix = tfidf_matrix[ : last_database_index + 1]
+    new_articles_matrix = tfidf_matrix[last_database_index + 1 : ]
+    old_dup_index = set()
+    new_dup_index = set()
     
-    print('Check among articles')
-    cosine_sim_matrix = cosine_similarity(tfidf_matrix, dense_output=False)
+    print('Check with old articles')
+    cosine_sim_matrix = cosine_similarity(old_articles_matrix, new_articles_matrix, dense_output=False)
+    rows, cols = cosine_sim_matrix.nonzero()
+    values = cosine_sim_matrix.data
+    filter_index = np.where(values >= similarity_threshold)[0]
+    result = [(rows[i], cols[i]) for i in filter_index]
+
+    for i1, i2 in result:
+        date1 = old_articles[i1]['published_date']
+        web1 = old_articles[i1]['web']
+        date2 = new_articles[i2]['published_date']
+        web2 = new_articles[i2]['web']
+        time_diff_in_days = abs((date1 - date2).total_seconds()) / (3600 * 24)
+
+        if web1 in ['dantri', 'vnexpress'] and web2 in ['vietnamnet', 'vtcnews']:
+            new_dup_index.add(i2)
+
+        elif web2 in ['dantri', 'vnexpress'] and web1 in ['vietnamnet', 'vtcnews']:
+            old_dup_index.add(i1)
+
+        elif web1 in ['dantri', 'vnexpress'] and web2 in ['dantri', 'vnexpress']:
+            if web1 != web2 and time_diff_in_days <= time_threshold_in_days:
+                if date1 >= date2:
+                    new_dup_index.add(i2)
+                else:
+                    old_dup_index.add(i1)
+
+        elif web1 in ['vietnamnet', 'vtcnews'] and web2 in ['vietnamnet', 'vtcnews']:
+            if date1 >= date2:
+                new_dup_index.add(i2)
+            else:
+                old_dup_index.add(i1)
+
+    print('Check with new articles')
+    cosine_sim_matrix = cosine_similarity(new_articles_matrix, dense_output=False)
     rows, cols = cosine_sim_matrix.nonzero()
     values = cosine_sim_matrix.data
     filter_index = np.where(values >= similarity_threshold)[0]
     result = [(rows[i], cols[i]) for i in filter_index if rows[i] < cols[i]]
 
     for i1, i2 in result:
-        date1 = articles[i1]['published_date']
-        web1 = articles[i1]['web']
-        date2 = articles[i2]['published_date']
-        web2 = articles[i2]['web']
+        date1 = new_articles[i1]['published_date']
+        web1 = new_articles[i1]['web']
+        date2 = new_articles[i2]['published_date']
+        web2 = new_articles[i2]['web']
         time_diff_in_days = abs((date1 - date2).total_seconds()) / (3600 * 24)
 
         if web1 in ['dantri', 'vnexpress'] and web2 in ['vietnamnet', 'vtcnews']:
-            dup_index.add(i2)
+            new_dup_index.add(i2)
 
         elif web2 in ['dantri', 'vnexpress'] and web1 in ['vietnamnet', 'vtcnews']:
-            dup_index.add(i1)
+            new_dup_index.add(i1)
 
         elif web1 in ['dantri', 'vnexpress'] and web2 in ['dantri', 'vnexpress']:
             if web1 != web2 and time_diff_in_days <= time_threshold_in_days:
                 if date1 >= date2:
-                    dup_index.add(i2)
+                    new_dup_index.add(i2)
                 else:
-                    dup_index.add(i1)
+                    new_dup_index.add(i1)
 
         elif web1 in ['vietnamnet', 'vtcnews'] and web2 in ['vietnamnet', 'vtcnews']:
             if date1 >= date2:
-                dup_index.add(i2)
+                new_dup_index.add(i2)
             else:
-                dup_index.add(i1)
+                new_dup_index.add(i1)
 
     # delete duplicated articles
-    old_dup_index = [int(id) for id in dup_index if id <= last_database_index]
-    new_dup_id = [articles[id]['_id'] for id in dup_index if id > last_database_index]
+    new_dup_id = [new_articles[id]['_id'] for id in new_dup_index]
     black_list = [
-        {"link": articles[id]['link'], "web": articles[id]['web']} for id in dup_index
+        {
+            "link": new_articles[id]['link'], 
+            "web": new_articles[id]['web']
+        } 
+        for id in new_dup_index
     ]
+    black_list.extend([
+        {
+            "link": old_articles[id]['link'], 
+            "web": old_articles[id]['web']
+        } 
+        for id in old_dup_index
+    ])
 
     with data.connect_to_mongo() as client:
         db = client['Ganesha_News']
@@ -204,7 +248,7 @@ def check_duplicated_titles(similarity_threshold=0.75, time_threshold_in_days=1.
         b_collection = db['black_list']
     
         if len(old_dup_index) > 0:
-            result = collection.delete_many({'index': {'$in': old_dup_index}})
+            result = collection.delete_many({'index': {'$in': [int(id) for id in old_dup_index]}})
             print(f'Deleted {result.deleted_count} duplicated documents from database')
             
             bulk_updates = []
@@ -227,8 +271,9 @@ def check_duplicated_titles(similarity_threshold=0.75, time_threshold_in_days=1.
             print(f'Added {len(result.inserted_ids)} black list document')
             
     # Update processed titles list
-    titles = [title for i, title in enumerate(titles) if i not in dup_index]
-    data.save_processed_titles(titles)
+    updated_old_titles = [title for i, title in enumerate(old_titles) if i not in old_dup_index]
+    updated_new_titles = [title for i, title in enumerate(new_titles) if i not in new_dup_index]
+    data.save_processed_titles(updated_old_titles + updated_new_titles)
 
     # Update saved topic distributions
     topic_distributions = data.load_topic_distributions()

@@ -17,7 +17,7 @@ def caculate_time(func: callable):
     print(f'Executed time: {executed_time:.3f}s')
 
 
-def connect_to_mongo(host='mongodb', port=27017):
+def connect_to_mongo(host='localhost', port=27017):
     connect_str = f"mongodb://{host}:{port}"
     return MongoClient(connect_str)
 

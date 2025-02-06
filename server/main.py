@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     client = connect_to_mongo()
     database = client["Ganesha_News"]
     neighbor_graph = load_neighbor_graph()
-    asyncio.create_task(periodic_task())
+    # asyncio.create_task(periodic_task())
 
     yield
     client.close()
